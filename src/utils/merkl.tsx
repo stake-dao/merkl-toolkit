@@ -25,7 +25,7 @@ const getAllStakeDaoStrategies = async (): Promise<Strategy[]> => {
 };
 
 export const getMerklLastId = async (): Promise<number> => {
-    const client = await getClient(1);
+    const client = await getClient(1, true);
 
     return Number(await client.readContract({
         address: MERKL_CONTRACT,
@@ -39,7 +39,7 @@ export const getNewIncentives = async (fromId: number, toId: number): Promise<In
 
     const strategies = await getAllStakeDaoStrategies();
 
-    const client = await getClient(mainnet.id);
+    const client = await getClient(mainnet.id, true);
     const incentives: IncentiveExtended[] = [];
 
     for (let i = fromId; i < toId; i++) {

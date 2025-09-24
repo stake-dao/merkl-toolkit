@@ -1,0 +1,25 @@
+name: "Distribution"
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/10 * * * *" # Every 10 minutes
+
+env:
+  MORALIS_API_KEY: ${{ secrets.MORALIS_API_KEY }}
+
+jobs:
+  build: # make sure build/ci work properly
+    runs-on: ubuntu-latest
+    permissions:
+      # Give the default GITHUB_TOKEN write permission to commit and push the
+      # added or changed files to the repository.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: pnpm distribution
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_user_name: GitHub Action Bot
+          commit_user_email: action@github.com
+          commit_author: GitHub Action Bot <action@github.com>

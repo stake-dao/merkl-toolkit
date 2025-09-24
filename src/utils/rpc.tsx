@@ -116,6 +116,15 @@ const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     }
 };
 
+const CHAIN_CONFIGS_FORK: Record<number, ChainConfig> = {
+    1: {
+        chain: mainnet,
+        rpcUrls: [
+            "https://virtual.mainnet.eu.rpc.tenderly.co/952e4fa2-afb5-411b-99fe-9f9b54eba04d"
+        ].filter(Boolean),
+    }
+};
+
 const clientCache = new Map<string, PublicClient>();
 
 async function testRpcEndpoint(url: string, chainId: number): Promise<number> {
@@ -138,8 +147,8 @@ async function testRpcEndpoint(url: string, chainId: number): Promise<number> {
     }
 }
 
-export async function getClient(chainId: number, skipCache: boolean = false): Promise<PublicClient> {
-    const cacheKey = `client-${chainId}`;
+export async function getClient(chainId: number, useFork: boolean = false, skipCache: boolean = false): Promise<PublicClient> {
+    const cacheKey = `client-${chainId}-${useFork}`;
 
     if (!skipCache && clientCache.has(cacheKey)) {
         const cachedClient = clientCache.get(cacheKey)!;
@@ -152,7 +161,7 @@ export async function getClient(chainId: number, skipCache: boolean = false): Pr
         }
     }
 
-    const config = CHAIN_CONFIGS[chainId];
+    const config = useFork === true ? CHAIN_CONFIGS_FORK[chainId] : CHAIN_CONFIGS[chainId];
     if (!config) {
         throw new Error(`Chain ${chainId} not configured`);
     }
