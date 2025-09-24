@@ -23,11 +23,12 @@ export const distribute = async () => {
 
     // For each incentives still active, fetch gauge holders
     const lastDistributions = getLastDistributionsData()
-    const lastTimestamp = lastDistributions.length > 0 ? currentTimestamp : lastDistributions[lastDistributions.length - 1].timestamp;
+    const lastTimestamp = lastDistributions.length === 0 ? currentTimestamp : lastDistributions[lastDistributions.length - 1].timestamp;
 
     const incentivesAlive = incentives.filter((incentive) => incentive.end > lastTimestamp);
     if (incentivesAlive.length === 0) {
         console.log("⚠️ No active incentives at this timestamp:", currentTimestamp);
+        console.log("⚠️ Last distribution timestamp was : ", lastTimestamp)
         return
     }
 
@@ -81,16 +82,27 @@ export const distribute = async () => {
             throw new Error(`Error when finding gauge holders for gauge ${incentive.vault}`);
         }
 
-        const totalIncentiveTime = incentive.end - incentive.start;
+        const totalIncentiveTime = Number(incentive.end - incentive.start);
         const incentiveAmount = BigInt(incentive.amount);
         const incentivePerSecond = incentiveAmount / BigInt(totalIncentiveTime);
 
+        // Clamp current time to the end of the incentive
+        const effectiveNow = Math.min(currentTimestamp, Number(incentive.end));
+
         let secSinceLastDistribution: number = 0;
-        if (lastDistributionTimestamp < incentive.start) {
-            secSinceLastDistribution = currentTimestamp - Number(incentive.start);
+        if (lastDistributionTimestamp < Number(incentive.start)) {
+            // If last distribution is before the start, count from the start
+            secSinceLastDistribution = effectiveNow - Number(incentive.start);
         } else {
-            secSinceLastDistribution = currentTimestamp - lastDistributionTimestamp;
+            // Otherwise, count from last distribution
+            secSinceLastDistribution = effectiveNow - lastDistributionTimestamp;
         }
+
+        // Ensure no negative values
+        if (secSinceLastDistribution < 0) {
+            secSinceLastDistribution = 0;
+        }
+
         const amountToDistribute = incentivePerSecond * BigInt(secSinceLastDistribution);
 
         const totalSupply = gaugeHolders.holders.reduce((acc: bigint, user) => acc + BigInt(user.balance), BigInt(0));
