@@ -4,7 +4,7 @@ import { safeParse, safeStringify } from './parse';
 import { IncentiveExtended } from '../interfaces/IncentiveExtended';
 
 const getIncentivesPath = (): string => {
-    return path.resolve(__dirname, "../data/incentives.json");
+    return path.resolve(__dirname, "../../data/incentives.json");
 }
 
 export const getIncentives = async () => {

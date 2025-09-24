@@ -23,6 +23,22 @@ export const distribute = async () => {
 
     // For each incentives still active, fetch gauge holders
     const incentivesAlive = incentives.filter((incentive) => incentive.end > currentTimestamp);
+    if (incentivesAlive.length === 0) {
+        console.log("⚠️ No active incentives at this timestamp:", currentTimestamp);
+        return
+    }
+
+    // Log active incentives
+    console.log(
+        `✅ Found ${incentivesAlive.length} active incentives at timestamp ${currentTimestamp}`
+    );
+
+    for (const [i, incentive] of incentivesAlive.entries()) {
+        console.log(
+            `  #${i} gauge=${incentive.gauge} reward=${incentive.reward} endsAt=${incentive.end}`
+        );
+    }
+    console.log("\n");
 
     const gaugesMap: Record<Address, boolean> = {};
     for (const incentive of incentivesAlive) {
@@ -64,7 +80,7 @@ export const distribute = async () => {
         }
 
         const totalIncentiveTime = incentive.end - incentive.start;
-        const incentiveAmount = BigInt(incentive.reward);
+        const incentiveAmount = BigInt(incentive.amount);
         const incentivePerSecond = incentiveAmount / BigInt(totalIncentiveTime);
 
         let secSinceLastDistribution: number = 0;
@@ -83,6 +99,11 @@ export const distribute = async () => {
                 address: incentive.reward as Address,
                 decimals: incentive.rewardDecimals,
                 symbol: incentive.rewardSymbol,
+            },
+            distribution: {
+                incentivePerSecond,
+                amountToDistribute,
+                incentiveId: incentive.id,
             },
             users: gaugeHolders.holders.map((user) => {
                 const share = (BigInt(user.balance) * 10n ** BigInt(incentive.rewardDecimals)) / totalSupply;
@@ -111,6 +132,7 @@ export const distribute = async () => {
     writeDistribution(currentDistribution);
     writeLastDistributionData({
         blockNumber: Number(currentBlock.number),
-        timestamp: currentTimestamp
+        timestamp: currentTimestamp,
+        sentOnchain: false,
     });
 };

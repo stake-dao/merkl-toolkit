@@ -9,7 +9,7 @@ import MerkleTree from 'merkletreejs';
 import { Distribution } from '../interfaces/Distribution';
 
 const getMerklePath = (timestamp: number): string => {
-    return path.resolve(__dirname, `../data/distributions/${timestamp}/merkle.json`);
+    return path.resolve(__dirname, `../../data/distributions/${timestamp}/merkle.json`);
 }
 
 export const getMerkle = (timestamp: number): MerkleData => {
@@ -74,10 +74,10 @@ export const createCombineDistribution = (
     if (previousMerkleData && previousMerkleData.claims) {
         Object.entries(previousMerkleData.claims).forEach(
             ([address, claimData]) => {
-                const normalizedAddress = getAddress(address);
+                const userNormalizedAddress = getAddress(address);
 
-                if (!normalizedMerkleDistribution[normalizedAddress]) {
-                    normalizedMerkleDistribution[normalizedAddress] = {};
+                if (!normalizedMerkleDistribution[userNormalizedAddress]) {
+                    normalizedMerkleDistribution[userNormalizedAddress] = {};
                 }
 
                 if (claimData && claimData.tokens) {
@@ -86,12 +86,12 @@ export const createCombineDistribution = (
                             const normalizedTokenAddress = getAddress(tokenAddress);
                             const prevAmount = BigInt(tokenData.amount || "0");
                             const currentAmount = BigInt(
-                                normalizedMerkleDistribution[normalizedAddress][
+                                normalizedMerkleDistribution[userNormalizedAddress][
                                 normalizedTokenAddress
                                 ] || "0"
                             );
 
-                            normalizedMerkleDistribution[normalizedAddress][
+                            normalizedMerkleDistribution[userNormalizedAddress][
                                 normalizedTokenAddress
                             ] = (prevAmount + currentAmount).toString();
                         }

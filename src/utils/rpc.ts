@@ -1,4 +1,4 @@
-import { createPublicClient, http, PublicClient, Chain } from "viem";
+import { createPublicClient, http, Chain } from "viem";
 import {
     mainnet as viemMainnet,
     bsc,
@@ -125,7 +125,7 @@ const CHAIN_CONFIGS_FORK: Record<number, ChainConfig> = {
     }
 };
 
-const clientCache = new Map<string, PublicClient>();
+const clientCache = new Map<string, any>();
 
 async function testRpcEndpoint(url: string, chainId: number): Promise<number> {
     try {
@@ -147,7 +147,7 @@ async function testRpcEndpoint(url: string, chainId: number): Promise<number> {
     }
 }
 
-export async function getClient(chainId: number, useFork: boolean = false, skipCache: boolean = false): Promise<PublicClient> {
+export async function getClient(chainId: number, useFork: boolean = false, skipCache: boolean = false): Promise<any> {
     const cacheKey = `client-${chainId}-${useFork}`;
 
     if (!skipCache && clientCache.has(cacheKey)) {
@@ -230,7 +230,7 @@ export async function getClient(chainId: number, useFork: boolean = false, skipC
     return client;
 }
 
-export async function getRedundantClients(chainId: number): Promise<PublicClient[]> {
+export async function getRedundantClients(chainId: number): Promise<any[]> {
     const config = CHAIN_CONFIGS[chainId];
     if (!config) {
         throw new Error(`Chain ${chainId} not configured`);
@@ -254,7 +254,7 @@ export function clearClientCache(): void {
 }
 
 // Helper function to create a client with automatic fallback
-export async function getClientWithFallback(chainId: number): Promise<PublicClient> {
+export async function getClientWithFallback(chainId: number): Promise<any> {
     try {
         return await getClient(chainId);
     } catch (error) {

@@ -5,7 +5,7 @@ import { safeParse, safeStringify } from './parse';
 import { GaugeHolders } from '../interfaces/GaugeHolders';
 
 const getDistributionDirPath = (timestamp: number): string => {
-  return path.resolve(__dirname, `../data/distributions/${timestamp}`);
+  return path.resolve(__dirname, `../../data/distributions/${timestamp}`);
 };
 
 const getDistributionPath = (timestamp: number): string => {

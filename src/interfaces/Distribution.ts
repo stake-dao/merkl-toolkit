@@ -10,6 +10,13 @@ export interface IncentiveDistribution {
     vault: Address;
     token: IntentiveToken;
     users: UserDistribution[];
+    distribution: IncentiveDistributionDetails;
+}
+
+export interface IncentiveDistributionDetails {
+    amountToDistribute: bigint;
+    incentivePerSecond: bigint;
+    incentiveId: number;
 }
 
 export interface IntentiveToken {

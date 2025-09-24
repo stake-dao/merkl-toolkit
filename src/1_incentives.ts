@@ -18,8 +18,10 @@ export const fetchIncentives = async () => {
         const newIncentives = await getNewIncentives(lastId, lastIncentiveId)
         incentives = incentives.concat(newIncentives);
         console.log(`✅ Fetched ${newIncentives.length} new incentive(s)`);
-    }
 
-    // Store
-    writeIncentives(incentives);
+        // Store
+        writeIncentives(incentives);
+    } else {
+        console.log(`✅ No new incentive`);
+    }
 }

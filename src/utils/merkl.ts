@@ -1,5 +1,4 @@
 import { mainnet } from "viem/chains";
-import { merklAbi } from "../abis/Merkl";
 import { MERKL_CONTRACT } from "../constants";
 import { getClient } from "./rpc";
 import { IncentiveExtended } from "../interfaces/IncentiveExtended";
@@ -7,9 +6,10 @@ import { Incentive } from "../interfaces/Incentive";
 import { Address, erc20Abi } from "viem";
 import axios from "axios";
 import { Strategy } from "../interfaces/Strategy";
+import { merklAbi } from "../abis/Merkl";
 
 const url = "https://raw.githubusercontent.com/stake-dao/api/main"
-const PROTOCOLS = ["pendle", "balancer", "angle", "curve", "pancakeswap", "yearn", "passive", "v2/curve"];
+const PROTOCOLS = ["balancer", "v2/curve"];
 const V2_CURVE_CHAIN_IDS = [1, 10, 100, 146, 252, 42161, 8453]
 
 const getAllStakeDaoStrategies = async (): Promise<Strategy[]> => {
@@ -39,6 +39,13 @@ export const getNewIncentives = async (fromId: number, toId: number): Promise<In
 
     const strategies = await getAllStakeDaoStrategies();
 
+    for (const s of strategies) {
+        if (!s.gaugeAddress) {
+            console.log(s.name, '/', s.protocol)
+            console.log("-----")
+        }
+    }
+
     const client = await getClient(mainnet.id, true);
     const incentives: IncentiveExtended[] = [];
 
@@ -51,23 +58,21 @@ export const getNewIncentives = async (fromId: number, toId: number): Promise<In
         })) as Incentive;
 
         // Check if we have a gauge deployed
-        const strategy = strategies.find((strategy) => strategy.gaugeAddress.toLowerCase() === incentive.gauge.toLowerCase());
+        const strategy = strategies.find((strategy) => strategy.gaugeAddress.toLowerCase() === incentive[0].toLowerCase());
         if (!strategy) {
             continue;
         }
 
-        incentive.id = i;
-
         // Fetch token data
         const [decimals, symbol] = await Promise.all([
             client.readContract({
-                address: incentive.reward as Address,
+                address: incentive[1] as Address,
                 abi: erc20Abi,
                 functionName: "decimals",
                 args: [],
             }),
             client.readContract({
-                address: incentive.reward as Address,
+                address: incentive[1] as Address,
                 abi: erc20Abi,
                 functionName: "symbol",
                 args: [],
@@ -75,7 +80,15 @@ export const getNewIncentives = async (fromId: number, toId: number): Promise<In
         ])
 
         incentives.push({
-            ...incentive,
+            id: i,
+            gauge: incentive[0],
+            reward: incentive[1],
+            duration: incentive[2],
+            start: incentive[3],
+            end: incentive[4],
+            fromChainId: incentive[5],
+            sender: incentive[6],
+            amount: incentive[7],
             vault: strategy.vault,
             rewardDecimals: decimals,
             rewardSymbol: symbol,
