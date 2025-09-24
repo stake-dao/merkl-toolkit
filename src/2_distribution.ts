@@ -22,7 +22,10 @@ export const distribute = async () => {
     const incentives = await getIncentives();
 
     // For each incentives still active, fetch gauge holders
-    const incentivesAlive = incentives.filter((incentive) => incentive.end > currentTimestamp);
+    const lastDistributions = getLastDistributionsData()
+    const lastTimestamp = lastDistributions.length > 0 ? currentTimestamp : lastDistributions[lastDistributions.length - 1].timestamp;
+
+    const incentivesAlive = incentives.filter((incentive) => incentive.end > lastTimestamp);
     if (incentivesAlive.length === 0) {
         console.log("⚠️ No active incentives at this timestamp:", currentTimestamp);
         return
@@ -69,7 +72,6 @@ export const distribute = async () => {
     }
 
     // Compute the distribution
-    const lastDistributions = getLastDistributionsData();
     const lastDistributionTimestamp = lastDistributions.length === 0 ? 0 : lastDistributions[lastDistributions.length - 1].timestamp;
 
     const currentIncentiveToDistribute: IncentiveDistribution[] = [];
