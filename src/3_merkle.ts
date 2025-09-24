@@ -1,7 +1,7 @@
 import { getAddress } from 'viem';
 import { getDistribution } from './utils/distribution';
 import { getLastDistributionsData, overideDistributionData } from './utils/distributionData';
-import { createCombineDistribution, generateMerkleTree, getMerkle, writeMerkle } from './utils/merkle';
+import { createCombineDistribution, generateMerkleTree, getMerkle, writeLastMerkle, writeMerkle } from './utils/merkle';
 import { MerkleData } from './interfaces/MerkleData';
 
 export const generateMerkle = async () => {
@@ -54,4 +54,7 @@ export const generateMerkle = async () => {
     // tag the distribution as sent onchain
     lastDistributionData.sentOnchain = true;
     overideDistributionData(distributionsData)
+
+    // Write the merkle again in the data root path
+    writeLastMerkle(merkleData);
 }

@@ -22,6 +22,15 @@ export const writeMerkle = (timestamp: number, merkle: MerkleData) => {
     console.log(`💾 Merkle saved to ${path}`);
 }
 
+export const writeLastMerkle = (merkle: MerkleData) => {
+
+    fs.writeFileSync(
+        path.resolve(__dirname, `../../data/last_merkle.json`)
+        , safeStringify(merkle),
+        { encoding: 'utf-8' }
+    );
+    console.log(`💾 Merkle saved globaly`);
+}
 
 export const createCombineDistribution = (
     currentDistribution: Distribution,
