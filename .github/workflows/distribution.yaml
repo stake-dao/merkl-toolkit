@@ -53,7 +53,7 @@ jobs:
       
       - name: Clean up
         if: always()
-        run: make -f automation/sdfxs/run.mk clean
+        run: make -f automation/distribution.mk clean
 
       - name: Send error notification to Telegram
         if: failure()
@@ -65,8 +65,7 @@ jobs:
           message: |
             ❌ <b>Workflow failed</b>
             • <b>Workflow:</b> ${{ github.workflow }}
-            • <b>Job:</b> generate-sdfxs-merkle
-            • <b>Token:</b> sdFXS
+            • <b>Job:</b> generate-incentives-merkle
             • <b>Trigger:</b> ${{ github.event_name }}
             • <b>Status:</b> ${{ job.status }}
             📋 <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}">View workflow logs</a>
