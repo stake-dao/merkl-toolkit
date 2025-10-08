@@ -1,2 +1,17 @@
-node_modules
+# Directories
+node_modules/
+tmp/
+venv/
+.nodeenv/
+temp/
+.claude/
+.cache/
+
+# Files
+.DS_Store
 .env
+.vscode/settings.json
+
+# Files to ignore
+package-lock.json
+yarn.lock
