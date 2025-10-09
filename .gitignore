@@ -15,4 +15,3 @@ temp/
 # Files to ignore
 package-lock.json
 yarn.lock
-data
