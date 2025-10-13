@@ -7,4 +7,5 @@ export interface Incentive {
     fromChainId: bigint;   // chain ID where the incentive was originally created
     sender: string;        // original sender address
     amount: bigint;        // Amount to incentivize
+    manager: string;
 }

@@ -39,13 +39,6 @@ export const getNewIncentives = async (fromId: number, toId: number): Promise<In
 
     const strategies = await getAllStakeDaoStrategies();
 
-    for (const s of strategies) {
-        if (!s.gaugeAddress) {
-            console.log(s.name, '/', s.protocol)
-            console.log("-----")
-        }
-    }
-
     const client = await getClient(mainnet.id);
     const incentives: IncentiveExtended[] = [];
 
@@ -89,6 +82,7 @@ export const getNewIncentives = async (fromId: number, toId: number): Promise<In
             fromChainId: incentive[5],
             sender: incentive[6],
             amount: incentive[7],
+            manager: incentive[8],
             vault: strategy.vault,
             rewardDecimals: decimals,
             rewardSymbol: symbol,

@@ -1,7 +1,7 @@
 import { mainnet } from "viem/chains";
 import { getIncentives } from "./utils/incentives";
 import { getClient } from "./utils/rpc";
-import { Address, isAddress } from "viem";
+import { Address, isAddress, parseEther } from "viem";
 import { getTokenHolders } from "./utils/token";
 import { GaugeHolders } from "./interfaces/GaugeHolders";
 import { getLastDistributionsData, writeLastDistributionData } from "./utils/distributionData";
@@ -101,6 +101,15 @@ export const distribute = async () => {
         }
 
         const amountToDistribute = incentivePerSecond * BigInt(secSinceLastDistribution);
+
+        // Manage holders empty
+        if (gaugeHolders.holders.length === 0) {
+            // Redirect amount to the manager
+            gaugeHolders.holders.push({
+                user: incentive.manager as Address,
+                balance: parseEther("1").toString(),
+            });
+        }
 
         const totalSupply = gaugeHolders.holders.reduce((acc: bigint, user) => acc + BigInt(user.balance), BigInt(0));
 
