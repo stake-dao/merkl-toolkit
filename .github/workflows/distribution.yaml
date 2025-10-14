@@ -9,7 +9,7 @@ env:
   MORALIS_API_KEY: ${{ secrets.MORALIS_API_KEY }}
 
 jobs:
-  build: # make sure build/ci work properly
+  run-operation:
     runs-on: ubuntu-latest
     permissions:
       # Give the default GITHUB_TOKEN write permission to commit and push the
@@ -54,3 +54,15 @@ jobs:
       - name: Clean up
         if: always()
         run: make -f automation/distribution.mk clean
+  
+  trigger-set-root:
+    needs: run-operation
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.mode == 'execute' && success() }}
+    steps:
+      - name: Trigger set root
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GIT_ACCESS_TOKEN }}
+          repository: stake-dao/workflows
+          event-type: hook-incentive-set-root
