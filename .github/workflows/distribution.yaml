@@ -58,7 +58,7 @@ jobs:
   trigger-set-root:
     needs: run-operation
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.mode == 'execute' && success() }}
+    if: ${{ success() }}
     steps:
       - name: Trigger set root
         uses: peter-evans/repository-dispatch@v3
