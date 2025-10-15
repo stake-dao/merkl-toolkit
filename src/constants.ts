@@ -1,3 +1,3 @@
 import { Address } from "viem";
 
-export const MERKL_CONTRACT = "0xf7753e64debD4548a6Cdb964D77b0CC408440E13" as Address;
+export const MERKL_CONTRACT = "0xE91Dd4c8bf5533D2b678eCf089eF0bcAa79C0CcD" as Address;
