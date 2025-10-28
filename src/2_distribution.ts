@@ -7,6 +7,9 @@ import { GaugeHolders } from "./interfaces/GaugeHolders";
 import { getLastDistributionsData, writeLastDistributionData } from "./utils/distributionData";
 import { Distribution, IncentiveDistribution } from "./interfaces/Distribution";
 import { rmAndCreateDistributionDir, writeDistribution, writeDistributionGaugeData } from "./utils/distribution";
+import { generateBlockSnapshots } from "./utils/snapshot";
+import { TokenHolderScanner } from "./utils/tokenHolderScanner";
+import { TokenHolder } from "./interfaces/TokenHolder";
 
 export const distribute = async () => {
     // Fetch current block data
@@ -57,10 +60,32 @@ export const distribute = async () => {
     const gaugesHolders: GaugeHolders[] = [];
     const vaults = Object.keys(gaugesMap) as Address[];
     for (const vault of vaults) {
-        const holders = await getTokenHolders(vault);
+        const holders = await getTokenHolders(vault, Number(currentBlock.number));
+
+        // Creating snapshots
+        const snapshots = generateBlockSnapshots(holders.fromBlock, holders.blockNumber, { numSnapshots: 10 });
+
+        const scanner = new TokenHolderScanner(process.env.MAINNET_RPC_URL, vault);
+        const totalBalances = new Map<`0x${string}`, bigint>();
+        for (const snapshot of snapshots) {
+            // Fetch balances
+            const balances = await scanner.getBalancesAtBlock(holders.users, BigInt(snapshot));
+
+            // Sum
+            for (const [user, balance] of balances.entries()) {
+                const currentTotal = totalBalances.get(user) || 0n;
+                totalBalances.set(user, currentTotal + balance);
+            }
+        }
+
+        const tokenHolders: TokenHolder[] = Array.from(totalBalances.entries()).map(([user, balance]) => ({
+            user,
+            balance: balance.toString()
+        }));
+
         const gaugeHolders: GaugeHolders = {
             vault,
-            holders
+            holders: tokenHolders,
         };
 
         gaugesHolders.push(gaugeHolders);
