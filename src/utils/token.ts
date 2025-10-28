@@ -1,7 +1,8 @@
 import axios from "axios";
 import { Address } from "viem";
 import * as dotenv from "dotenv";
-import { TokenHolder } from "../interfaces/TokenHolder";
+import { getHolders, HolderData, writeHolders } from "./holders";
+import { TokenHolderScanner } from "./tokenHolderScanner";
 
 dotenv.config();
 
@@ -29,7 +30,7 @@ async function fetchWithRetry<T>(url: string, retries = 5, delay = 2000): Promis
     throw new Error("Unreachable code: fetchWithRetry loop ended");
 }
 
-export const getTokenHolders = async (gaugeAddress: Address): Promise<TokenHolder[]> => {
+/*export const getTokenHolders = async (gaugeAddress: Address): Promise<TokenHolder[]> => {
     const holders: TokenHolder[] = [];
     let cursor: string | null = null;
     const limit = 100; // max value accepted by Moralis API
@@ -53,4 +54,31 @@ export const getTokenHolders = async (gaugeAddress: Address): Promise<TokenHolde
 
     console.log(`✅ Finished fetching. Total holders: ${holders.length}`);
     return holders;
+};*/
+
+interface HolderDataExtended extends HolderData {
+    fromBlock: number;
+}
+
+export const getTokenHolders = async (vault: Address, toBlock: number): Promise<HolderDataExtended> => {
+
+    const holdersData = getHolders(vault);
+    const fromBlock = holdersData.blockNumber > 0 ? holdersData.blockNumber : 22575062;
+
+    const scanner = new TokenHolderScanner(process.env.MAINNET_RPC_URL, vault);
+    const newHolders = await scanner.getHoldersViaEtherscan(process.env.ETHERSCAN_API_KEY, vault, BigInt(fromBlock), BigInt(toBlock));
+
+    let users = Array.from(new Set([...holdersData.users, ...newHolders]));
+    users = users.filter((user) => user.toLowerCase() !== "0x0000000000000000000000000000000000000000".toLowerCase());
+
+    writeHolders(vault, {
+        blockNumber: toBlock,
+        users
+    });
+
+    return {
+        blockNumber: toBlock,
+        fromBlock,
+        users: users
+    };
 };
