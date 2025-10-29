@@ -1,7 +1,7 @@
 import { mainnet } from "viem/chains";
 import { Address, isAddress } from "viem";
 
-import { getIncentives } from "./utils/incentives";
+import { getIncentives, writeIncentives } from "./utils/incentives";
 import { getClient } from "./utils/rpc";
 import { getTokenHolders } from "./utils/token";
 import { TokenHolderScanner } from "./utils/tokenHolderScanner";
@@ -216,7 +216,7 @@ export const distribute = async () => {
     const lastDistributionTimestamp =
         lastDistributions.length === 0 ? 0 : lastDistributions[lastDistributions.length - 1].timestamp;
 
-    const activeIncentives = incentives.filter((incentive) => Number(incentive.end) > lastDistributionTimestamp);
+    const activeIncentives = incentives.filter((incentive) => !incentive.ended);
     if (activeIncentives.length === 0) {
         console.log("⚠️ No active incentives after last distribution timestamp:", lastDistributionTimestamp);
         return;
@@ -309,4 +309,13 @@ export const distribute = async () => {
         timestamp: currentTimestamp,
         sentOnchain: false,
     });
+
+    // Check ended flag
+    for(const incentive of incentives) {
+        if(currentTimestamp >= incentive.end ) {
+            incentive.ended = true;
+        }
+    }
+
+    writeIncentives(incentives);
 };
