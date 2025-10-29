@@ -230,7 +230,7 @@ export const distribute = async () => {
     });
     console.log("");
 
-    // Step 1 — cut each incentive to this run's [start, end) window.
+    // 1. Cut each incentive to this run's [start, end) window.
     const windowsByVault = toWindowsByVault(activeIncentives, lastDistributionTimestamp, currentTimestamp);
     if (windowsByVault.size === 0) {
         console.log("⚠️ No windows to distribute in this run.");
@@ -239,7 +239,7 @@ export const distribute = async () => {
 
     rmAndCreateDistributionDir(currentTimestamp);
 
-    // Step 2 — for each vault replay historical transfers and collect TWAB weights.
+    // 2. For each vault replay historical transfers and collect TWAB weights.
     const blockTimestampCache = new Map<string, number>();
     const currentBlockNumber = currentBlock.number as bigint;
     const allIncentiveDistributions: IncentiveDistribution[] = [];
@@ -296,7 +296,7 @@ export const distribute = async () => {
         writeDistributionGaugeData(currentTimestamp, gaugeSnapshot);
     }
 
-    // Step 3 — persist the distribution artifact for the Merkle step.
+    // 3. Persist the distribution artifact for the Merkle step.
     const distribution: Distribution = {
         blockNumber: Number(currentBlock.number),
         timestamp: currentTimestamp,
