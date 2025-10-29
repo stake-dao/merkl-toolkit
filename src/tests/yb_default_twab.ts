@@ -78,6 +78,7 @@ const buildDefaultIncentive = (): IncentiveExtended => {
         rewardDecimals: DEFAULT_REWARD_DECIMALS,
         rewardSymbol: DEFAULT_REWARD_SYMBOL,
         vault: DEFAULT_VAULT,
+        ended: false,
     };
 };
 
