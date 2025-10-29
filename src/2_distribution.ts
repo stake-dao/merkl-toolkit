@@ -187,7 +187,7 @@ const toDistributionForWindow = (
         return {
             user: address,
             balance: weight.toString(),
-            share: formatSharePercent(weight, totalWeight, SHARE_DECIMALS),
+            share: formatSharePercent(weight, totalWeight, PERCENTAGE_DISPLAY_DECIMALS),
             amount: amount.toString(),
         };
     });
@@ -195,7 +195,7 @@ const toDistributionForWindow = (
     const holders: TokenHolder[] = entries.map(([address, weight]) => ({
         user: address,
         weight: weight.toString(),
-        sharePercentage: formatSharePercent(weight, totalWeight, SHARE_DECIMALS),
+        sharePercentage: formatSharePercent(weight, totalWeight, PERCENTAGE_DISPLAY_DECIMALS),
     }));
 
     return { users, holders };
