@@ -18,7 +18,7 @@ import { Distribution, IncentiveDistribution } from "./interfaces/Distribution";
  *   3. Convert TWAB weights into token payouts and persist both the incentive list and the
  *      per-window debug snapshots used for auditing.
  *
- * The heavy lifting (log pagination, accumulator math) lives in utils/twab.
+ * The heavy lifting (log pagination, seconds-per-share math) lives in utils/twab.
  */
 
 import { GaugeHolders, GaugeWindowSnapshot } from "./interfaces/GaugeHolders";

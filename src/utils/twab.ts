@@ -6,7 +6,7 @@ export const SECONDS_PER_SHARE_SCALE = 10n ** 36n;
 
 interface HolderState {
     balance: bigint;
-    lastAccumulator: bigint;
+    lastSettledSecondsPerShare: bigint;
     twabWeight: bigint;
 }
 
@@ -30,7 +30,7 @@ export const computeTwabSnapshots = async (
     for (const [addr, balance] of initialBalances.entries()) {
         holders.set(addr, {
             balance,
-            lastAccumulator: 0n,
+            lastSettledSecondsPerShare: 0n,
             twabWeight: 0n,
         });
         totalSupply += balance;
@@ -44,25 +44,25 @@ export const computeTwabSnapshots = async (
     const settleHolder = (address: Address): HolderState => {
         let state = holders.get(address);
         if (!state) {
-            state = { balance: 0n, lastAccumulator: secondsPerVaultShare, twabWeight: 0n };
+            state = { balance: 0n, lastSettledSecondsPerShare: secondsPerVaultShare, twabWeight: 0n };
             holders.set(address, state);
         }
-        const delta = secondsPerVaultShare - state.lastAccumulator;
+        const delta = secondsPerVaultShare - state.lastSettledSecondsPerShare;
         if (delta !== 0n && state.balance !== 0n) {
             state.twabWeight += state.balance * delta;
         }
-        state.lastAccumulator = secondsPerVaultShare;
+        state.lastSettledSecondsPerShare = secondsPerVaultShare;
         return state;
     };
 
     // 4. Flush the tracker for all holders (used when we take a snapshot).
     const settleAllHolders = () => {
         for (const state of holders.values()) {
-            const delta = secondsPerVaultShare - state.lastAccumulator;
+            const delta = secondsPerVaultShare - state.lastSettledSecondsPerShare;
             if (delta !== 0n && state.balance !== 0n) {
                 state.twabWeight += state.balance * delta;
             }
-            state.lastAccumulator = secondsPerVaultShare;
+            state.lastSettledSecondsPerShare = secondsPerVaultShare;
         }
     };
 
