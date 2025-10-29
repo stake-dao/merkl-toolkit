@@ -1,6 +1,6 @@
 import { Address } from "viem";
 
-import { BlockTimestampCache, TransferLog, getBlockTimestamp } from "@src/utils/chain";
+import { BlockTimestampCache, TransferLog, getBlockTimestamp } from "./chain";
 
 export const SECONDS_PER_SHARE_SCALE = 10n ** 36n;
 
