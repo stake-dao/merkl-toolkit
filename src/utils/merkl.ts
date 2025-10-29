@@ -86,6 +86,7 @@ export const getNewIncentives = async (fromId: number, toId: number): Promise<In
             vault: strategy.vault,
             rewardDecimals: decimals,
             rewardSymbol: symbol,
+            ended: false,
         });
     }
 
