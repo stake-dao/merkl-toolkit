@@ -1,14 +1,14 @@
 import { mainnet } from "viem/chains";
 import { Address, isAddress } from "viem";
 
-import { getIncentives } from "@src/utils/incentives";
-import { getClient } from "@src/utils/rpc";
-import { getTokenHolders } from "@src/utils/token";
-import { TokenHolderScanner } from "@src/utils/tokenHolderScanner";
-import { rmAndCreateDistributionDir, writeDistribution, writeDistributionGaugeData } from "@src/utils/distribution";
-import { getLastDistributionsData, writeLastDistributionData } from "@src/utils/distributionData";
+import { getIncentives } from "./utils/incentives";
+import { getClient } from "./utils/rpc";
+import { getTokenHolders } from "./utils/token";
+import { TokenHolderScanner } from "./utils/tokenHolderScanner";
+import { rmAndCreateDistributionDir, writeDistribution, writeDistributionGaugeData } from "./utils/distribution";
+import { getLastDistributionsData, writeLastDistributionData } from "./utils/distributionData";
 
-import { Distribution, IncentiveDistribution } from "@src/interfaces/Distribution";
+import { Distribution, IncentiveDistribution } from "./interfaces/Distribution";
 /**
  * Distribution
  *
@@ -21,12 +21,12 @@ import { Distribution, IncentiveDistribution } from "@src/interfaces/Distributio
  * The heavy lifting (log pagination, accumulator math) lives in utils/twab.
  */
 
-import { GaugeHolders, GaugeWindowSnapshot } from "@src/interfaces/GaugeHolders";
-import { TokenHolder } from "@src/interfaces/TokenHolder";
-import { IncentiveExtended } from "@src/interfaces/IncentiveExtended";
+import { GaugeHolders, GaugeWindowSnapshot } from "./interfaces/GaugeHolders";
+import { TokenHolder } from "./interfaces/TokenHolder";
+import { IncentiveExtended } from "./interfaces/IncentiveExtended";
 
-import { computeTwabSnapshots } from "@src/utils/twab";
-import { blockAtOrAfter, blockAtOrBefore, fetchTransferLogs } from "@src/utils/chain";
+import { computeTwabSnapshots } from "./utils/twab";
+import { blockAtOrAfter, blockAtOrBefore, fetchTransferLogs } from "./utils/chain";
 
 const SHARE_DECIMALS = 6;
 const ZERO_SHARE = `0.${"0".repeat(SHARE_DECIMALS)}`;
@@ -110,7 +110,7 @@ const buildSnapshots = async (
     const globalStart = BigInt(sorted[0].startTimestamp);
     const globalEnd = BigInt(sorted[sorted.length - 1].endTimestamp);
 
-    // Step 1 — find the block span that straddles the whole window.
+    // 1. Find the block span that straddles the whole window.
     const startBlock = await blockAtOrAfter(client, sorted[0].startTimestamp, 0n, currentBlockNumber, cache);
     const endBlock = await blockAtOrBefore(client, sorted[sorted.length - 1].endTimestamp, startBlock, currentBlockNumber, cache);
 
@@ -120,7 +120,7 @@ const buildSnapshots = async (
     }
 
     const snapshotBlock = startBlock > 0n ? startBlock - 1n : startBlock;
-    // Step 2 — gather starting balances and every transfer affecting the vault.
+    // 2. Gather starting balances and every transfer affecting the vault.
     const holdersInfo = await getTokenHolders(vault, Number(endBlock));
     const scanner = new TokenHolderScanner(mainnetRpcUrl, vault);
     const initialBalances = await scanner.getBalancesAtBlock(holdersInfo.users, snapshotBlock);
@@ -132,7 +132,7 @@ const buildSnapshots = async (
         ),
     );
 
-    // Step 3 — replay the transfers once and return the snapshots map.
+    // 3. Replay the transfers once and return the snapshots map.
     return computeTwabSnapshots(client, logs, checkpoints, globalStart, globalEnd, initialBalances, cache);
 };
 
