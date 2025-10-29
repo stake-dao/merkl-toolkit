@@ -1,14 +1,14 @@
 import { mainnet } from "viem/chains";
 import { Address, isAddress } from "viem";
 
-import { getIncentives } from "./utils/incentives";
-import { getClient } from "./utils/rpc";
-import { getTokenHolders } from "./utils/token";
-import { TokenHolderScanner } from "./utils/tokenHolderScanner";
-import { rmAndCreateDistributionDir, writeDistribution, writeDistributionGaugeData } from "./utils/distribution";
-import { getLastDistributionsData, writeLastDistributionData } from "./utils/distributionData";
+import { getIncentives } from "@src/utils/incentives";
+import { getClient } from "@src/utils/rpc";
+import { getTokenHolders } from "@src/utils/token";
+import { TokenHolderScanner } from "@src/utils/tokenHolderScanner";
+import { rmAndCreateDistributionDir, writeDistribution, writeDistributionGaugeData } from "@src/utils/distribution";
+import { getLastDistributionsData, writeLastDistributionData } from "@src/utils/distributionData";
 
-import { Distribution, IncentiveDistribution } from "./interfaces/Distribution";
+import { Distribution, IncentiveDistribution } from "@src/interfaces/Distribution";
 /**
  * Distribution
  *
@@ -21,21 +21,27 @@ import { Distribution, IncentiveDistribution } from "./interfaces/Distribution";
  * The heavy lifting (log pagination, accumulator math) lives in utils/twab.
  */
 
-import { GaugeHolders, GaugeWindowSnapshot } from "./interfaces/GaugeHolders";
-import { TokenHolder } from "./interfaces/TokenHolder";
-import { IncentiveExtended } from "./interfaces/IncentiveExtended";
+import { GaugeHolders, GaugeWindowSnapshot } from "@src/interfaces/GaugeHolders";
+import { TokenHolder } from "@src/interfaces/TokenHolder";
+import { IncentiveExtended } from "@src/interfaces/IncentiveExtended";
 
-import {
-    blockAtOrAfter,
-    blockAtOrBefore,
-    computeTwabSnapshots,
-    fetchTransferLogs,
-    formatSharePercent,
-} from "./utils/twab";
+import { computeTwabSnapshots } from "@src/utils/twab";
+import { blockAtOrAfter, blockAtOrBefore, fetchTransferLogs } from "@src/utils/chain";
 
 const SHARE_DECIMALS = 6;
 const ZERO_SHARE = `0.${"0".repeat(SHARE_DECIMALS)}`;
 const FULL_SHARE = `100.${"0".repeat(SHARE_DECIMALS)}`;
+
+const formatSharePercent = (weight: bigint, totalWeight: bigint, decimals = SHARE_DECIMALS): string => {
+    if (totalWeight === 0n || weight === 0n) {
+        return `0.${"0".repeat(decimals)}`;
+    }
+    const scale = 10n ** BigInt(decimals);
+    const percentScaled = (weight * 100n * scale) / totalWeight;
+    const integerPart = percentScaled / scale;
+    const fractionalPart = percentScaled % scale;
+    return `${integerPart}.${fractionalPart.toString().padStart(decimals, "0")}`;
+};
 
 type IncentiveWindow = {
     incentive: IncentiveExtended;
@@ -100,10 +106,11 @@ const buildSnapshots = async (
     cache: Map<string, number>,
     mainnetRpcUrl: string,
 ) => {
-    const sorted = windows.sort((a, b) => a.startTimestamp - b.startTimestamp);
+    const sorted = [...windows].sort((a, b) => a.startTimestamp - b.startTimestamp);
     const globalStart = BigInt(sorted[0].startTimestamp);
     const globalEnd = BigInt(sorted[sorted.length - 1].endTimestamp);
 
+    // Step 1 — find the block span that straddles the whole window.
     const startBlock = await blockAtOrAfter(client, sorted[0].startTimestamp, 0n, currentBlockNumber, cache);
     const endBlock = await blockAtOrBefore(client, sorted[sorted.length - 1].endTimestamp, startBlock, currentBlockNumber, cache);
 
@@ -113,6 +120,7 @@ const buildSnapshots = async (
     }
 
     const snapshotBlock = startBlock > 0n ? startBlock - 1n : startBlock;
+    // Step 2 — gather starting balances and every transfer affecting the vault.
     const holdersInfo = await getTokenHolders(vault, Number(endBlock));
     const scanner = new TokenHolderScanner(mainnetRpcUrl, vault);
     const initialBalances = await scanner.getBalancesAtBlock(holdersInfo.users, snapshotBlock);
@@ -124,6 +132,7 @@ const buildSnapshots = async (
         ),
     );
 
+    // Step 3 — replay the transfers once and return the snapshots map.
     return computeTwabSnapshots(client, logs, checkpoints, globalStart, globalEnd, initialBalances, cache);
 };
 
@@ -221,6 +230,7 @@ export const distribute = async () => {
     });
     console.log("");
 
+    // Step 1 — cut each incentive to this run's [start, end) window.
     const windowsByVault = toWindowsByVault(activeIncentives, lastDistributionTimestamp, currentTimestamp);
     if (windowsByVault.size === 0) {
         console.log("⚠️ No windows to distribute in this run.");
@@ -229,6 +239,7 @@ export const distribute = async () => {
 
     rmAndCreateDistributionDir(currentTimestamp);
 
+    // Step 2 — for each vault replay historical transfers and collect TWAB weights.
     const blockTimestampCache = new Map<string, number>();
     const currentBlockNumber = currentBlock.number as bigint;
     const allIncentiveDistributions: IncentiveDistribution[] = [];
@@ -285,6 +296,7 @@ export const distribute = async () => {
         writeDistributionGaugeData(currentTimestamp, gaugeSnapshot);
     }
 
+    // Step 3 — persist the distribution artifact for the Merkle step.
     const distribution: Distribution = {
         blockNumber: Number(currentBlock.number),
         timestamp: currentTimestamp,

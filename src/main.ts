@@ -1,7 +1,7 @@
-import { fetchIncentives } from "./1_incentives";
+import { fetchIncentives } from "@src/1_incentives";
 import * as dotenv from 'dotenv';
-import { distribute } from "./2_distribution";
-import { generateMerkle } from "./3_merkle";
+import { distribute } from "@src/2_distribution";
+import { generateMerkle } from "@src/3_merkle";
 
 dotenv.config();
 
