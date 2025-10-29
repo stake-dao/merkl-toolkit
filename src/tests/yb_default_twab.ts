@@ -2,14 +2,14 @@ import fs from "fs";
 import path from "path";
 import { Address, getAddress } from "viem";
 
-import { writeIncentives } from "../utils/incentives";
-import { overideDistributionData, getLastDistributionsData } from "../utils/distributionData";
-import { distribute } from "../2_distribution";
-import { generateMerkle } from "../3_merkle";
-import { MerkleData } from "../interfaces/MerkleData";
-import { IncentiveExtended } from "../interfaces/IncentiveExtended";
-import { UniversalMerkle } from "../interfaces/UniversalMerkle";
-import { writeHolders } from "../utils/holders";
+import { writeIncentives } from "@src/utils/incentives";
+import { overideDistributionData, getLastDistributionsData } from "@src/utils/distributionData";
+import { distribute } from "@src/2_distribution";
+import { generateMerkle } from "@src/3_merkle";
+import { MerkleData } from "@src/interfaces/MerkleData";
+import { IncentiveExtended } from "@src/interfaces/IncentiveExtended";
+import { UniversalMerkle } from "@src/interfaces/UniversalMerkle";
+import { writeHolders } from "@src/utils/holders";
 
 const DEFAULT_VAULT = "0x0F67C05A034fEC0183ad74d3be42c8Ba27F6c4c4" as Address;
 const DEFAULT_GAUGE = "0xf69Fb60B79E463384b40dbFDFB633AB5a863C9A2" as Address;

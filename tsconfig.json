@@ -4,6 +4,10 @@
         "resolveJsonModule": true,
         "esModuleInterop": true,
         "lib": ["es2021"],
-        "target": "ES2021"
+        "target": "ES2021",
+        "baseUrl": ".",
+        "paths": {
+            "@src/*": ["src/*"]
+        }
     }
 }
