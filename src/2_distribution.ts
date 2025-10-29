@@ -28,11 +28,11 @@ import { IncentiveExtended } from "./interfaces/IncentiveExtended";
 import { computeTwabSnapshots } from "./utils/twab";
 import { blockAtOrAfter, blockAtOrBefore, fetchTransferLogs } from "./utils/chain";
 
-const SHARE_DECIMALS = 6;
-const ZERO_SHARE = `0.${"0".repeat(SHARE_DECIMALS)}`;
-const FULL_SHARE = `100.${"0".repeat(SHARE_DECIMALS)}`;
+const PERCENTAGE_DISPLAY_DECIMALS = 6;
+const ZERO_SHARE = `0.${"0".repeat(PERCENTAGE_DISPLAY_DECIMALS)}`;
+const FULL_SHARE = `100.${"0".repeat(PERCENTAGE_DISPLAY_DECIMALS)}`;
 
-const formatSharePercent = (weight: bigint, totalWeight: bigint, decimals = SHARE_DECIMALS): string => {
+const formatSharePercent = (weight: bigint, totalWeight: bigint, decimals = PERCENTAGE_DISPLAY_DECIMALS): string => {
     if (totalWeight === 0n || weight === 0n) {
         return `0.${"0".repeat(decimals)}`;
     }

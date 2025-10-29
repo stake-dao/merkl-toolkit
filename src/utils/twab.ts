@@ -7,7 +7,7 @@ export const SECONDS_PER_SHARE_SCALE = 10n ** 36n;
 interface HolderState {
     balance: bigint;
     lastSettledSecondsPerShare: bigint;
-    twabWeight: bigint;
+    weightedSecondsHeld: bigint;
 }
 
 export type SnapshotMap = Map<bigint, Map<Address, bigint>>;
@@ -31,7 +31,7 @@ export const computeTwabSnapshots = async (
         holders.set(addr, {
             balance,
             lastSettledSecondsPerShare: 0n,
-            twabWeight: 0n,
+            weightedSecondsHeld: 0n,
         });
         totalSupply += balance;
     }
@@ -44,12 +44,12 @@ export const computeTwabSnapshots = async (
     const settleHolder = (address: Address): HolderState => {
         let state = holders.get(address);
         if (!state) {
-            state = { balance: 0n, lastSettledSecondsPerShare: secondsPerVaultShare, twabWeight: 0n };
+            state = { balance: 0n, lastSettledSecondsPerShare: secondsPerVaultShare, weightedSecondsHeld: 0n };
             holders.set(address, state);
         }
         const delta = secondsPerVaultShare - state.lastSettledSecondsPerShare;
         if (delta !== 0n && state.balance !== 0n) {
-            state.twabWeight += state.balance * delta;
+            state.weightedSecondsHeld += state.balance * delta;
         }
         state.lastSettledSecondsPerShare = secondsPerVaultShare;
         return state;
@@ -60,7 +60,7 @@ export const computeTwabSnapshots = async (
         for (const state of holders.values()) {
             const delta = secondsPerVaultShare - state.lastSettledSecondsPerShare;
             if (delta !== 0n && state.balance !== 0n) {
-                state.twabWeight += state.balance * delta;
+                state.weightedSecondsHeld += state.balance * delta;
             }
             state.lastSettledSecondsPerShare = secondsPerVaultShare;
         }
@@ -95,7 +95,7 @@ export const computeTwabSnapshots = async (
             advanceTo(ts);
             settleAllHolders();
             const snapshot = new Map<Address, bigint>();
-            for (const [addr, state] of holders.entries()) snapshot.set(addr, state.twabWeight);
+            for (const [addr, state] of holders.entries()) snapshot.set(addr, state.weightedSecondsHeld);
             snapshots.set(ts, snapshot);
             checkpointIndex++;
         }
@@ -121,7 +121,7 @@ export const computeTwabSnapshots = async (
         advanceTo(ts);
         settleAllHolders();
         const snapshot = new Map<Address, bigint>();
-        for (const [addr, state] of holders.entries()) snapshot.set(addr, state.twabWeight);
+        for (const [addr, state] of holders.entries()) snapshot.set(addr, state.weightedSecondsHeld);
         snapshots.set(ts, snapshot);
         checkpointIndex++;
     }
@@ -129,7 +129,7 @@ export const computeTwabSnapshots = async (
     // 8. Ensure the window boundaries themselves are present in the snapshot map.
     if (!snapshots.has(startTimestamp)) {
         const snapshot = new Map<Address, bigint>();
-        for (const [addr, state] of holders.entries()) snapshot.set(addr, state.twabWeight);
+        for (const [addr, state] of holders.entries()) snapshot.set(addr, state.weightedSecondsHeld);
         snapshots.set(startTimestamp, snapshot);
     }
 
@@ -137,7 +137,7 @@ export const computeTwabSnapshots = async (
         advanceTo(endTimestamp);
         settleAllHolders();
         const snapshot = new Map<Address, bigint>();
-        for (const [addr, state] of holders.entries()) snapshot.set(addr, state.twabWeight);
+        for (const [addr, state] of holders.entries()) snapshot.set(addr, state.weightedSecondsHeld);
         snapshots.set(endTimestamp, snapshot);
     }
 
