@@ -7,9 +7,6 @@ import { TokenHolderScanner } from "./tokenHolderScanner";
 dotenv.config();
 
 const MORALIS_API_KEY = process.env.MORALIS_API_KEY;
-if (!MORALIS_API_KEY) {
-    throw new Error("MORALIS_API_KEY is not set in .env");
-}
 
 async function fetchWithRetry<T>(url: string, retries = 5, delay = 2000): Promise<T> {
     for (let attempt = 1; attempt <= retries; attempt++) {
