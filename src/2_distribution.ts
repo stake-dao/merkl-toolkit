@@ -67,7 +67,7 @@ const toWindowsByVault = (
             throw new Error(`${incentive.vault} is not a correct Address`);
         }
 
-        const windowStart = Math.max(Number(incentive.start), Number(incentive.distributedUntil));
+        const windowStart = Math.max(Number(incentive.start), Number(incentive.distributedUntil ?? incentive.start));
         const windowEnd = Math.min(now, Number(incentive.end));
         const fullDuration = Number(incentive.end - incentive.start);
 
