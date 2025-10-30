@@ -79,6 +79,7 @@ const buildDefaultIncentive = (): IncentiveExtended => {
         rewardSymbol: DEFAULT_REWARD_SYMBOL,
         vault: DEFAULT_VAULT,
         ended: false,
+        distributedUntil: BigInt(DEFAULT_START_TIMESTAMP),
     };
 };
 
