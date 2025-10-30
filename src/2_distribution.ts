@@ -58,7 +58,6 @@ type IncentiveWindow = {
  */
 const toWindowsByVault = (
     incentives: IncentiveExtended[],
-    lastTimestamp: number,
     now: number,
 ) => {
     const windowsByVault = new Map<Address, IncentiveWindow[]>();
@@ -68,7 +67,7 @@ const toWindowsByVault = (
             throw new Error(`${incentive.vault} is not a correct Address`);
         }
 
-        const windowStart = Math.max(lastTimestamp, Number(incentive.start));
+        const windowStart = Math.max(Number(incentive.start), Number(incentive.distributedUntil));
         const windowEnd = Math.min(now, Number(incentive.end));
         const fullDuration = Number(incentive.end - incentive.start);
 
@@ -231,7 +230,7 @@ export const distribute = async () => {
     console.log("");
 
     // 1. Cut each incentive to this run's [start, end) window.
-    const windowsByVault = toWindowsByVault(activeIncentives, lastDistributionTimestamp, currentTimestamp);
+    const windowsByVault = toWindowsByVault(activeIncentives, currentTimestamp);
     if (windowsByVault.size === 0) {
         console.log("⚠️ No windows to distribute in this run.");
         return;
@@ -243,6 +242,7 @@ export const distribute = async () => {
     const blockTimestampCache = new Map<string, number>();
     const currentBlockNumber = currentBlock.number as bigint;
     const allIncentiveDistributions: IncentiveDistribution[] = [];
+    const processedUntil = new Map<number, bigint>();
 
     for (const [vault, windows] of windowsByVault.entries()) {
         // Replaying once per vault keeps the job efficient even for many overlapping incentives.
@@ -287,6 +287,8 @@ export const distribute = async () => {
                 endTimestamp: window.endTimestamp,
                 holders,
             });
+
+            processedUntil.set(window.incentive.id, BigInt(window.endTimestamp));
         }
 
         const gaugeSnapshot: GaugeHolders = {
@@ -311,8 +313,13 @@ export const distribute = async () => {
     });
 
     // Check ended flag
-    for(const incentive of incentives) {
-        if(currentTimestamp >= incentive.end ) {
+    for (const incentive of incentives) {
+        let latest = processedUntil.get(incentive.id);
+        latest = latest > incentive.end ? incentive.end : latest;
+
+        incentive.distributedUntil = latest;
+
+        if (BigInt(currentTimestamp) >= incentive.end ) {
             incentive.ended = true;
         }
     }

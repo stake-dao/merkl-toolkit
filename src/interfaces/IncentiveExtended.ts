@@ -6,4 +6,5 @@ export interface IncentiveExtended extends Incentive {
     rewardSymbol: string;
     vault: string;
     ended: boolean;
+    distributedUntil: bigint;
 }

@@ -87,8 +87,9 @@ export const getNewIncentives = async (fromId: number, toId: number): Promise<In
             rewardDecimals: decimals,
             rewardSymbol: symbol,
             ended: false,
+            distributedUntil: incentive[3],
         });
     }
 
     return incentives;
-}; 
+};
