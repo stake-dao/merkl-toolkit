@@ -1,183 +1,328 @@
 import { mainnet } from "viem/chains";
-import { getIncentives } from "./utils/incentives";
+import { Address, isAddress } from "viem";
+
+import { getIncentives, writeIncentives } from "./utils/incentives";
 import { getClient } from "./utils/rpc";
-import { Address, isAddress, parseEther } from "viem";
 import { getTokenHolders } from "./utils/token";
-import { GaugeHolders } from "./interfaces/GaugeHolders";
-import { getLastDistributionsData, writeLastDistributionData } from "./utils/distributionData";
-import { Distribution, IncentiveDistribution } from "./interfaces/Distribution";
-import { rmAndCreateDistributionDir, writeDistribution, writeDistributionGaugeData } from "./utils/distribution";
-import { generateBlockSnapshots } from "./utils/snapshot";
 import { TokenHolderScanner } from "./utils/tokenHolderScanner";
+import { rmAndCreateDistributionDir, writeDistribution, writeDistributionGaugeData } from "./utils/distribution";
+import { getLastDistributionsData, writeLastDistributionData } from "./utils/distributionData";
+
+import { Distribution, IncentiveDistribution } from "./interfaces/Distribution";
+/**
+ * Distribution
+ *
+ * High-level flow per job run:
+ *   1. Load unsent incentives and slice them to the current [start, end) window.
+ *   2. For each vault, replay the share token transfer history once via computeTwabSnapshots.
+ *   3. Convert TWAB weights into token payouts and persist both the incentive list and the
+ *      per-window debug snapshots used for auditing.
+ *
+ * The heavy lifting (log pagination, seconds-per-share math) lives in utils/twab.
+ */
+
+import { GaugeHolders, GaugeWindowSnapshot } from "./interfaces/GaugeHolders";
 import { TokenHolder } from "./interfaces/TokenHolder";
+import { IncentiveExtended } from "./interfaces/IncentiveExtended";
 
-export const distribute = async () => {
-    // Fetch current block data
-    const client = await getClient(mainnet.id);
-    const currentBlock = await client.getBlock();
+import { computeTwabSnapshots } from "./utils/twab";
+import { blockAtOrAfter, blockAtOrBefore, fetchTransferLogs } from "./utils/chain";
 
-    const currentTimestamp = Number(currentBlock.timestamp);
+const PERCENTAGE_DISPLAY_DECIMALS = 6;
+const ZERO_SHARE = `0.${"0".repeat(PERCENTAGE_DISPLAY_DECIMALS)}`;
+const FULL_SHARE = `100.${"0".repeat(PERCENTAGE_DISPLAY_DECIMALS)}`;
 
-    // Get incentives
-    const incentives = await getIncentives();
-
-    // For each incentives still active, fetch gauge holders
-    const lastDistributions = getLastDistributionsData()
-    const lastTimestamp = lastDistributions.length === 0 ? currentTimestamp : lastDistributions[lastDistributions.length - 1].timestamp;
-
-    const incentivesAlive = incentives.filter((incentive) => incentive.end > lastTimestamp);
-    if (incentivesAlive.length === 0) {
-        console.log("⚠️ No active incentives at this timestamp:", currentTimestamp);
-        console.log("⚠️ Last distribution timestamp was : ", lastTimestamp)
-        return
+const formatSharePercent = (weight: bigint, totalWeight: bigint, decimals = PERCENTAGE_DISPLAY_DECIMALS): string => {
+    if (totalWeight === 0n || weight === 0n) {
+        return `0.${"0".repeat(decimals)}`;
     }
+    const scale = 10n ** BigInt(decimals);
+    const percentScaled = (weight * 100n * scale) / totalWeight;
+    const integerPart = percentScaled / scale;
+    const fractionalPart = percentScaled % scale;
+    return `${integerPart}.${fractionalPart.toString().padStart(decimals, "0")}`;
+};
 
-    // Log active incentives
-    console.log(
-        `✅ Found ${incentivesAlive.length} active incentives at timestamp ${currentTimestamp}`
-    );
+type IncentiveWindow = {
+    incentive: IncentiveExtended;
+    startTimestamp: number;
+    endTimestamp: number;
+    amountToDistribute: bigint;
+    incentivePerSecond: bigint;
+};
 
-    for (const [i, incentive] of incentivesAlive.entries()) {
-        console.log(
-            `  #${i} gauge=${incentive.gauge} reward=${incentive.reward} endsAt=${incentive.end}`
-        );
-    }
-    console.log("\n");
+/**
+ * Group incentives by vault and clamp each one to the active [last run, now] window.
+ * Rewards that ended before the previous checkpoint are ignored. The amount distributed
+ * in this run is simply (elapsed seconds in window) * (incentive rate).
+ */
+const toWindowsByVault = (
+    incentives: IncentiveExtended[],
+    now: number,
+) => {
+    const windowsByVault = new Map<Address, IncentiveWindow[]>();
 
-    const gaugesMap: Record<Address, boolean> = {};
-    for (const incentive of incentivesAlive) {
-        if (isAddress(incentive.vault)) {
-            gaugesMap[incentive.vault as Address] = true;
-        } else {
+    for (const incentive of incentives) {
+        if (!isAddress(incentive.vault)) {
             throw new Error(`${incentive.vault} is not a correct Address`);
         }
 
+        const windowStart = Math.max(Number(incentive.start), Number(incentive.distributedUntil ?? incentive.start));
+        const windowEnd = Math.min(now, Number(incentive.end));
+        const fullDuration = Number(incentive.end - incentive.start);
+
+        if (fullDuration <= 0 || windowStart >= windowEnd) continue;
+
+        const amount = BigInt(incentive.amount);
+        const perSecond = amount / BigInt(fullDuration);
+        const elapsed = BigInt(windowEnd - windowStart);
+
+        const windows = windowsByVault.get(incentive.vault as Address) ?? [];
+        windows.push({
+            incentive,
+            startTimestamp: windowStart,
+            endTimestamp: windowEnd,
+            amountToDistribute: perSecond * elapsed,
+            incentivePerSecond: perSecond,
+        });
+        windowsByVault.set(incentive.vault as Address, windows);
     }
 
-    // Create distribution dir
+    return windowsByVault;
+};
+
+/**
+ * Replay the share token history exactly once for a vault by:
+ *   - Binary-searching the block range that brackets the first/last window timestamp.
+ *   - Fetching balances at startBlock - 1 so we know every holder’s starting balance.
+ *   - Streaming transfer events and capturing accumulator values at every checkpoint.
+ */
+const buildSnapshots = async (
+    client: any,
+    vault: Address,
+    windows: IncentiveWindow[],
+    currentBlockNumber: bigint,
+    cache: Map<string, number>,
+    mainnetRpcUrl: string,
+) => {
+    const sorted = [...windows].sort((a, b) => a.startTimestamp - b.startTimestamp);
+    const globalStart = BigInt(sorted[0].startTimestamp);
+    const globalEnd = BigInt(sorted[sorted.length - 1].endTimestamp);
+
+    // 1. Find the block span that straddles the whole window.
+    const startBlock = await blockAtOrAfter(client, sorted[0].startTimestamp, 0n, currentBlockNumber, cache);
+    const endBlock = await blockAtOrBefore(client, sorted[sorted.length - 1].endTimestamp, startBlock, currentBlockNumber, cache);
+
+    if (endBlock < startBlock) {
+        console.warn(`⚠️ Invalid block range for vault ${vault}. Skipping.`);
+        return null;
+    }
+
+    const snapshotBlock = startBlock > 0n ? startBlock - 1n : startBlock;
+    // 2. Gather starting balances and every transfer affecting the vault.
+    const holdersInfo = await getTokenHolders(vault, Number(endBlock));
+    const scanner = new TokenHolderScanner(mainnetRpcUrl, vault);
+    const initialBalances = await scanner.getBalancesAtBlock(holdersInfo.users, snapshotBlock);
+
+    const logs = await fetchTransferLogs(client, vault, startBlock, endBlock);
+    const checkpoints = Array.from(
+        new Set(
+            sorted.flatMap((window) => [BigInt(window.startTimestamp), BigInt(window.endTimestamp)]).concat([globalStart, globalEnd]),
+        ),
+    );
+
+    // 3. Replay the transfers once and return the snapshots map.
+    return computeTwabSnapshots(client, logs, checkpoints, globalStart, globalEnd, initialBalances, cache);
+};
+
+const toDistributionForWindow = (
+    window: IncentiveWindow,
+    snapshots: Map<bigint, Map<Address, bigint>>,
+) => {
+    // Subtract snapshots to obtain raw TWAB weight earned inside this window.
+    const startWeights = snapshots.get(BigInt(window.startTimestamp)) ?? new Map<Address, bigint>();
+    const endWeights = snapshots.get(BigInt(window.endTimestamp)) ?? new Map<Address, bigint>();
+
+    const weights = new Map<Address, bigint>();
+    for (const address of new Set([...startWeights.keys(), ...endWeights.keys()])) {
+        const start = startWeights.get(address) ?? 0n;
+        const end = endWeights.get(address) ?? 0n;
+        const delta = end - start;
+        if (delta > 0n) {
+            weights.set(address, delta);
+        }
+    }
+
+    const entries = Array.from(weights.entries()).sort((a, b) => (a[1] === b[1] ? a[0].localeCompare(b[0]) : Number(b[1] - a[1])));
+    const totalWeight = entries.reduce((acc, [, weight]) => acc + weight, 0n);
+
+    if (entries.length === 0 || totalWeight === 0n) {
+        const share = window.amountToDistribute === 0n ? ZERO_SHARE : FULL_SHARE;
+        return {
+            users: [
+                {
+                    user: window.incentive.manager as Address,
+                    balance: "0",
+                    share,
+                    amount: window.amountToDistribute.toString(),
+                },
+            ],
+            holders: [
+                {
+                    user: window.incentive.manager as Address,
+                    weight: "0",
+                    sharePercentage: share,
+                },
+            ],
+        };
+    }
+
+    let allocated = 0n;
+    const users = entries.map(([address, weight], index) => {
+        const amount = index === entries.length - 1
+            ? window.amountToDistribute - allocated
+            : (window.amountToDistribute * weight) / totalWeight;
+        allocated += amount;
+        return {
+            user: address,
+            balance: weight.toString(),
+            share: formatSharePercent(weight, totalWeight, PERCENTAGE_DISPLAY_DECIMALS),
+            amount: amount.toString(),
+        };
+    });
+
+    const holders: TokenHolder[] = entries.map(([address, weight]) => ({
+        user: address,
+        weight: weight.toString(),
+        sharePercentage: formatSharePercent(weight, totalWeight, PERCENTAGE_DISPLAY_DECIMALS),
+    }));
+
+    return { users, holders };
+};
+
+export const distribute = async () => {
+    const mainnetRpcUrl = process.env.MAINNET_RPC_URL;
+    if (!mainnetRpcUrl) {
+        throw new Error("MAINNET_RPC_URL is not set in environment");
+    }
+
+    const client = await getClient(mainnet.id);
+    const currentBlock = await client.getBlock();
+    const currentTimestamp = Number(currentBlock.timestamp);
+
+    const incentives = await getIncentives();
+    const lastDistributions = getLastDistributionsData();
+    const lastDistributionTimestamp =
+        lastDistributions.length === 0 ? 0 : lastDistributions[lastDistributions.length - 1].timestamp;
+
+    const activeIncentives = incentives.filter((incentive) => !incentive.ended);
+    if (activeIncentives.length === 0) {
+        console.log("⚠️ No active incentives after last distribution timestamp:", lastDistributionTimestamp);
+        return;
+    }
+
+    console.log(`✅ Found ${activeIncentives.length} active incentives at timestamp ${currentTimestamp}`);
+    activeIncentives.forEach((incentive, idx) => {
+        console.log(
+            `  #${idx} gauge=${incentive.gauge} reward=${incentive.reward} endsAt=${Number(incentive.end)}`,
+        );
+    });
+    console.log("");
+
+    // 1. Cut each incentive to this run's [start, end) window.
+    const windowsByVault = toWindowsByVault(activeIncentives, currentTimestamp);
+    if (windowsByVault.size === 0) {
+        console.log("⚠️ No windows to distribute in this run.");
+        return;
+    }
+
     rmAndCreateDistributionDir(currentTimestamp);
 
-    const gaugesHolders: GaugeHolders[] = [];
-    const vaults = Object.keys(gaugesMap) as Address[];
-    for (const vault of vaults) {
-        const holders = await getTokenHolders(vault, Number(currentBlock.number));
+    // 2. For each vault replay historical transfers and collect TWAB weights.
+    const blockTimestampCache = new Map<string, number>();
+    const currentBlockNumber = currentBlock.number as bigint;
+    const allIncentiveDistributions: IncentiveDistribution[] = [];
+    const processedUntil = new Map<number, bigint>();
 
-        // Creating snapshots
-        const snapshots = generateBlockSnapshots(holders.fromBlock, holders.blockNumber, { numSnapshots: 10 });
-
-        const scanner = new TokenHolderScanner(process.env.MAINNET_RPC_URL, vault);
-        const totalBalances = new Map<`0x${string}`, bigint>();
-        for (const snapshot of snapshots) {
-            // Fetch balances
-            const balances = await scanner.getBalancesAtBlock(holders.users, BigInt(snapshot));
-
-            // Sum
-            for (const [user, balance] of balances.entries()) {
-                const currentTotal = totalBalances.get(user) || 0n;
-                totalBalances.set(user, currentTotal + balance);
-            }
-        }
-
-        const tokenHolders: TokenHolder[] = Array.from(totalBalances.entries()).map(([user, balance]) => ({
-            user,
-            balance: balance.toString()
-        }));
-
-        const gaugeHolders: GaugeHolders = {
+    for (const [vault, windows] of windowsByVault.entries()) {
+        // Replaying once per vault keeps the job efficient even for many overlapping incentives.
+        const snapshots = await buildSnapshots(
+            client,
             vault,
-            holders: tokenHolders,
-        };
+            windows,
+            currentBlockNumber,
+            blockTimestampCache,
+            mainnetRpcUrl,
+        );
 
-        gaugesHolders.push(gaugeHolders);
-
-        // Write gauge data
-        writeDistributionGaugeData(currentTimestamp, gaugeHolders);
-    }
-
-    // Compute the distribution
-    const lastDistributionTimestamp = lastDistributions.length === 0 ? 0 : lastDistributions[lastDistributions.length - 1].timestamp;
-
-    const currentIncentiveToDistribute: IncentiveDistribution[] = [];
-    for (const incentive of incentivesAlive) {
-        const gaugeHolders = gaugesHolders.find((g) => g.vault.toLowerCase() === incentive.vault.toLowerCase());
-        if (!gaugeHolders) {
-            throw new Error(`Error when finding gauge holders for gauge ${incentive.vault}`);
+        if (!snapshots) {
+            continue;
         }
 
-        const totalIncentiveTime = Number(incentive.end - incentive.start);
-        const incentiveAmount = BigInt(incentive.amount);
-        const incentivePerSecond = incentiveAmount / BigInt(totalIncentiveTime);
+        const gaugeWindowsSnapshots: GaugeWindowSnapshot[] = [];
 
-        // Clamp current time to the end of the incentive
-        const effectiveNow = Math.min(currentTimestamp, Number(incentive.end));
+        // Walk windows chronologically: each one consumes two snapshots (start/end)
+        // and translates them into per-user claim amounts.
+        for (const window of windows.sort((a, b) => a.startTimestamp - b.startTimestamp)) {
+            const { users, holders } = toDistributionForWindow(window, snapshots);
 
-        let secSinceLastDistribution: number = 0;
-        if (lastDistributionTimestamp < Number(incentive.start)) {
-            // If last distribution is before the start, count from the start
-            secSinceLastDistribution = effectiveNow - Number(incentive.start);
-        } else {
-            // Otherwise, count from last distribution
-            secSinceLastDistribution = effectiveNow - lastDistributionTimestamp;
-        }
-
-        // Ensure no negative values
-        if (secSinceLastDistribution < 0) {
-            secSinceLastDistribution = 0;
-        }
-
-        const amountToDistribute = incentivePerSecond * BigInt(secSinceLastDistribution);
-
-        // Manage holders empty
-        if (gaugeHolders.holders.length === 0) {
-            // Redirect amount to the manager
-            gaugeHolders.holders.push({
-                user: incentive.manager as Address,
-                balance: parseEther("1").toString(),
+            allIncentiveDistributions.push({
+                vault,
+                token: {
+                    address: window.incentive.reward as Address,
+                    decimals: window.incentive.rewardDecimals,
+                    symbol: window.incentive.rewardSymbol,
+                },
+                distribution: {
+                    incentivePerSecond: window.incentivePerSecond,
+                    amountToDistribute: window.amountToDistribute,
+                    incentiveId: window.incentive.id,
+                },
+                users,
             });
+
+            gaugeWindowsSnapshots.push({
+                incentiveId: window.incentive.id,
+                startTimestamp: window.startTimestamp,
+                endTimestamp: window.endTimestamp,
+                holders,
+            });
+
+            processedUntil.set(window.incentive.id, BigInt(window.endTimestamp));
         }
 
-        const totalSupply = gaugeHolders.holders.reduce((acc: bigint, user) => acc + BigInt(user.balance), BigInt(0));
-
-        const incentiveDistribution: IncentiveDistribution = {
-            vault: incentive.vault as Address,
-            token: {
-                address: incentive.reward as Address,
-                decimals: incentive.rewardDecimals,
-                symbol: incentive.rewardSymbol,
-            },
-            distribution: {
-                incentivePerSecond,
-                amountToDistribute,
-                incentiveId: incentive.id,
-            },
-            users: gaugeHolders.holders.map((user) => {
-                const share = (BigInt(user.balance) * 10n ** BigInt(incentive.rewardDecimals)) / totalSupply;
-                const shareStr = (Number(share) / Number(10n ** BigInt(incentive.rewardDecimals))) * 100;
-
-                const userAmount = (BigInt(user.balance) * amountToDistribute) / totalSupply;
-
-                return {
-                    balance: user.balance,
-                    user: user.user,
-                    amount: userAmount.toString(),
-                    share: shareStr.toString(),
-                }
-            }),
+        const gaugeSnapshot: GaugeHolders = {
+            vault,
+            windows: gaugeWindowsSnapshots,
         };
-
-        currentIncentiveToDistribute.push(incentiveDistribution);
+        writeDistributionGaugeData(currentTimestamp, gaugeSnapshot);
     }
 
-    const currentDistribution: Distribution = {
+    // 3. Persist the distribution artifact for the Merkle step.
+    const distribution: Distribution = {
         blockNumber: Number(currentBlock.number),
         timestamp: currentTimestamp,
-        incentives: currentIncentiveToDistribute
+        incentives: allIncentiveDistributions,
     };
 
-    writeDistribution(currentDistribution);
+    writeDistribution(distribution);
     writeLastDistributionData({
         blockNumber: Number(currentBlock.number),
         timestamp: currentTimestamp,
         sentOnchain: false,
     });
+
+    // Check ended flag
+    for (const incentive of incentives) {
+        let latest = processedUntil.get(incentive.id);
+        latest = latest > incentive.end ? incentive.end : latest;
+
+        incentive.distributedUntil = latest;
+
+        if (BigInt(currentTimestamp) >= incentive.end ) {
+            incentive.ended = true;
+        }
+    }
+
+    writeIncentives(incentives);
 };
