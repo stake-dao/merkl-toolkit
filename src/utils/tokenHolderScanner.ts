@@ -28,7 +28,7 @@ export class TokenHolderScanner {
      */
     private async fetchWithRetry(
         url: string,
-        maxRetries: number = 5,
+        maxRetries: number = 50,
         baseDelay: number = 1000
     ): Promise<any> {
         for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -115,6 +115,7 @@ export class TokenHolderScanner {
 
                 if (data.status !== '1' || !data.result || data.result.length === 0) {
                     hasMore = false;
+                    await new Promise(resolve => setTimeout(resolve, 250));
                     break;
                 }
 
