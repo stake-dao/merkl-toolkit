@@ -10,12 +10,12 @@ import { merklAbi } from "../abis/Merkl";
 
 const url = "https://raw.githubusercontent.com/stake-dao/api/main"
 const PROTOCOLS = ["balancer", "v2/curve"];
-const V2_CURVE_CHAIN_IDS = [1, 10, 100, 146, 252, 42161, 8453]
+const V2_CURVE_CHAIN_IDS = [1]
 
 const getAllStakeDaoStrategies = async (): Promise<Strategy[]> => {
     const datas = await Promise.all(PROTOCOLS.map((protocol) => {
         if (protocol !== "v2/curve") {
-            return [axios.get(`${url}/api/strategies/${protocol}/index.json`)]
+            return [axios.get(`${url}/api/strategies/${protocol}/1.json`)]
         }
 
         return V2_CURVE_CHAIN_IDS.map((chainId) => axios.get(`${url}/api/strategies/${protocol}/${chainId}.json`))
