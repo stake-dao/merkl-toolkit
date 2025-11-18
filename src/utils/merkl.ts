@@ -9,10 +9,15 @@ import { Strategy } from "../interfaces/Strategy";
 import { merklAbi } from "../abis/Merkl";
 
 const url = "https://raw.githubusercontent.com/stake-dao/api/main"
-const PROTOCOLS = ["balancer", "v2/curve"];
+const PROTOCOLS = ["balancer", "v2/curve", "pendle"];
 const V2_CURVE_CHAIN_IDS = [1]
 
-const getAllStakeDaoStrategies = async (): Promise<Strategy[]> => {
+interface ProtocolStrategies {
+    protocol: string;
+    strategies: Strategy[];
+}
+
+const getAllStakeDaoStrategies = async (): Promise<ProtocolStrategies[]> => {
     const datas = await Promise.all(PROTOCOLS.map((protocol) => {
         if (protocol !== "v2/curve") {
             return [axios.get(`${url}/api/strategies/${protocol}/1.json`)]
@@ -21,7 +26,13 @@ const getAllStakeDaoStrategies = async (): Promise<Strategy[]> => {
         return V2_CURVE_CHAIN_IDS.map((chainId) => axios.get(`${url}/api/strategies/${protocol}/${chainId}.json`))
     }).flat());
 
-    return datas.map((data) => data.data?.deployed || data.data).flat() as Strategy[];
+    return PROTOCOLS.map((protocol) => {
+        const data = datas.shift();
+        return {
+            protocol,
+            strategies: data.data?.deployed || data.data || [],
+        }
+    }) as ProtocolStrategies[];
 };
 
 export const getMerklLastId = async (): Promise<number> => {
@@ -37,7 +48,7 @@ export const getMerklLastId = async (): Promise<number> => {
 
 export const getNewIncentives = async (fromId: number, toId: number): Promise<IncentiveExtended[]> => {
 
-    const strategies = await getAllStakeDaoStrategies();
+    const protocolStrategies = await getAllStakeDaoStrategies();
 
     const client = await getClient(mainnet.id);
     const incentives: IncentiveExtended[] = [];
@@ -51,7 +62,19 @@ export const getNewIncentives = async (fromId: number, toId: number): Promise<In
         })) as Incentive;
 
         // Check if we have a gauge deployed
-        const strategy = strategies.find((strategy) => strategy.gaugeAddress.toLowerCase() === incentive[0].toLowerCase());
+        let strategy: Strategy | undefined = undefined;
+        for (const protocolStrategy of protocolStrategies) {
+            if (protocolStrategy.protocol === 'pendle') {
+                strategy = protocolStrategy.strategies.find((s) => s?.lpToken?.address?.toLocaleLowerCase() === incentive[0].toLowerCase());
+            } else {
+                strategy = protocolStrategy.strategies.find((s) => s.gaugeAddress.toLocaleLowerCase() === incentive[0].toLowerCase());
+            }
+
+            if (strategy) {
+                break;
+            }
+        }
+
         if (!strategy) {
             continue;
         }
