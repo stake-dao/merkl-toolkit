@@ -1,9 +1,9 @@
 import { mainnet } from "viem/chains";
-import { MERKL_CONTRACT } from "../constants";
+import { MERKL_CONTRACT, NULL_ADDRESS } from "../constants";
 import { getClient } from "./rpc";
 import { IncentiveExtended } from "../interfaces/IncentiveExtended";
 import { Incentive } from "../interfaces/Incentive";
-import { Address, erc20Abi } from "viem";
+import { Address, erc20Abi, getAddress } from "viem";
 import axios from "axios";
 import { Strategy } from "../interfaces/Strategy";
 import { merklAbi } from "../abis/Merkl";
@@ -60,6 +60,10 @@ export const getNewIncentives = async (fromId: number, toId: number): Promise<In
             functionName: "incentives",
             args: [BigInt(i)],
         })) as Incentive;
+
+        if (getAddress(incentive[1]) === NULL_ADDRESS && BigInt(incentive[7]) === BigInt(0)) {
+            continue;
+        }
 
         // Check if we have a gauge deployed
         let strategy: Strategy | undefined = undefined;
