@@ -10,19 +10,19 @@ import { MerkleData } from "../interfaces/MerkleData";
 import { IncentiveExtended } from "../interfaces/IncentiveExtended";
 import { UniversalMerkle } from "../interfaces/UniversalMerkle";
 import { writeHolders } from "../utils/holders";
-import { mainnet } from "viem/chains";
+import { base } from "viem/chains";
 
-const DEFAULT_VAULT = "0x0F67C05A034fEC0183ad74d3be42c8Ba27F6c4c4" as Address;
-const DEFAULT_GAUGE = "0xf69Fb60B79E463384b40dbFDFB633AB5a863C9A2" as Address;
+const DEFAULT_VAULT = "0x5979ccfb613b856fFE97C9A8b80a00cD22cd2666" as Address;
+const DEFAULT_GAUGE = "0x0566c704640de416E3B1747F63efe0C82f4a3dA7" as Address;
 const DEFAULT_MANAGER = "0x9A207a85E372fCDAC3014F945a65868f2a05Ba12" as Address;
-const DEFAULT_REWARD_TOKEN = "0x01791F726B4103694969820be083196cC7c045fF" as Address;
-const DEFAULT_START_TIMESTAMP = 1_760_691_731;
-const DEFAULT_END_TIMESTAMP = 1_761_296_531;
-const DEFAULT_REWARD_DECIMALS = 18;
-const DEFAULT_REWARD_AMOUNT = "6651.799257828034072402";
-const DEFAULT_REWARD_SYMBOL = "YB";
+const DEFAULT_REWARD_TOKEN = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913" as Address;
+const DEFAULT_START_TIMESTAMP = 1_766_996_095;
+const DEFAULT_END_TIMESTAMP = 1_767_687_295;
+const DEFAULT_REWARD_DECIMALS = 6;
+const DEFAULT_REWARD_AMOUNT = "30000";
+const DEFAULT_REWARD_SYMBOL = "USDC";
 
-const DATA_DIR = path.resolve(__dirname, "../../data");
+const DATA_DIR = path.resolve(__dirname, `../../data/${base.id}`);
 const INCENTIVES_PATH = path.resolve(DATA_DIR, "incentives.json");
 const DISTRIBUTION_LOG_PATH = path.resolve(DATA_DIR, "distribution.json");
 const LAST_MERKLE_PATH = path.resolve(DATA_DIR, "last_merkle.json");
@@ -72,7 +72,7 @@ const buildDefaultIncentive = (): IncentiveExtended => {
         duration,
         start: BigInt(DEFAULT_START_TIMESTAMP),
         end: BigInt(DEFAULT_END_TIMESTAMP),
-        fromChainId: BigInt(1),
+        fromChainId: BigInt(base.id),
         sender: DEFAULT_MANAGER,
         amount: toScaledAmount(DEFAULT_REWARD_AMOUNT, DEFAULT_REWARD_DECIMALS),
         manager: DEFAULT_MANAGER,
@@ -114,22 +114,22 @@ const main = async () => {
 
     try {
         // 1. Seed incentives with the legacy defaults and reset distribution history.
-        writeIncentives([buildDefaultIncentive()], mainnet.id);
-        overideDistributionData([], mainnet.id);
+        writeIncentives([buildDefaultIncentive()], base.id);
+        overideDistributionData([], base.id);
 
         // 2. Run the actual pipeline: compute TWAB weights and write distribution artifacts.
-        writeHolders(DEFAULT_VAULT, { blockNumber: 0, users: [] }, mainnet.id);
-        await distribute();
+        writeHolders(DEFAULT_VAULT, { blockNumber: 0, users: [] }, base.id);
+        await distribute(base.id);
 
         // Capture the generated timestamp so we can locate/remove the temp folder later.
-        const distributionLog = getLastDistributionsData(mainnet.id);
+        const distributionLog = getLastDistributionsData(base.id);
         if (distributionLog.length === 0) {
             throw new Error("Distribution run did not produce any entries.");
         }
         newDistributionTimestamp = distributionLog[distributionLog.length - 1].timestamp;
 
         // 3. Build the Merkle tree against the freshly generated distribution.
-        await generateMerkle();
+        await generateMerkle(base.id);
 
         if (!fs.existsSync(LAST_MERKLE_PATH)) {
             throw new Error("Merkle generation did not produce last_merkle.json");
@@ -138,7 +138,7 @@ const main = async () => {
         const merkle = JSON.parse(fs.readFileSync(LAST_MERKLE_PATH, { encoding: "utf-8" })) as MerkleData;
         describeMerkle(merkle);
         writeOutput(
-            `yb_default_${DEFAULT_START_TIMESTAMP}_${DEFAULT_END_TIMESTAMP}.json`,
+            `usdc_base_${DEFAULT_START_TIMESTAMP}_${DEFAULT_END_TIMESTAMP}.json`,
             merkle,
         );
 
@@ -152,7 +152,7 @@ const main = async () => {
             });
         });
         writeOutput(
-            `yb_default_${DEFAULT_START_TIMESTAMP}_${DEFAULT_END_TIMESTAMP}_flat.json`,
+            `usdc_base_${DEFAULT_START_TIMESTAMP}_${DEFAULT_END_TIMESTAMP}_flat.json`,
             flat,
         );
     } finally {

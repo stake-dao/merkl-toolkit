@@ -3,32 +3,32 @@ import fs from 'fs';
 import { safeParse, safeStringify } from './parse';
 import { IncentiveExtended } from '../interfaces/IncentiveExtended';
 
-const getIncentivesDir = (): string => {
-    return path.resolve(__dirname, "../../data");
+const getIncentivesDir = (chainId): string => {
+    return path.resolve(__dirname, `../../data${chainId !== 1 ? `/${chainId}` : ''}`);
 }
 
-const getIncentivesPath = (): string => {
-    const dir = getIncentivesDir();
+const getIncentivesPath = (chainId): string => {
+    const dir = getIncentivesDir(chainId);
     return path.resolve(dir, `incentives.json`);
 }
 
-export const getIncentives = async () => {
-    const path = getIncentivesPath();
+export const getIncentives = async (chainId) => {
+    const path = getIncentivesPath(chainId);
     if (!fs.existsSync(path)) {
         return [];
     }
 
-    return safeParse(fs.readFileSync(getIncentivesPath(), { encoding: 'utf-8' })) as IncentiveExtended[];
+    return safeParse(fs.readFileSync(getIncentivesPath(chainId), { encoding: 'utf-8' })) as IncentiveExtended[];
 }
 
-export const writeIncentives = (incentives: IncentiveExtended[]) => {
+export const writeIncentives = (incentives: IncentiveExtended[], chainId) => {
     
-    const dir = getIncentivesDir();
+    const dir = getIncentivesDir(chainId);
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
     }
 
-    const path = getIncentivesPath();
+    const path = getIncentivesPath(chainId);
     fs.writeFileSync(path, safeStringify(incentives), { encoding: 'utf-8' });
     console.log(`💾 Incentives saved to ${path}`);
 }

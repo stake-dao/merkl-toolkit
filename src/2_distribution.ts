@@ -1,4 +1,4 @@
-import { mainnet } from "viem/chains";
+import { base, mainnet } from "viem/chains";
 import { Address, isAddress } from "viem";
 
 import { getIncentives, writeIncentives } from "./utils/incentives";
@@ -13,7 +13,7 @@ import { Distribution, IncentiveDistribution } from "./interfaces/Distribution";
  * Distribution
  *
  * High-level flow per job run:
- *   1. Load unsent incentives and slice them to the current [start, end) window.
+ *   1. Load unsent incentives and slice them to the current [start, end] window.
  *   2. For each vault, replay the share token transfer history once via computeTwabSnapshots.
  *   3. Convert TWAB weights into token payouts and persist both the incentive list and the
  *      per-window debug snapshots used for auditing.
@@ -103,7 +103,8 @@ const buildSnapshots = async (
     windows: IncentiveWindow[],
     currentBlockNumber: bigint,
     cache: Map<string, number>,
-    mainnetRpcUrl: string,
+    rpcUrl: string,
+    chainId: number
 ) => {
     const sorted = [...windows].sort((a, b) => a.startTimestamp - b.startTimestamp);
     const globalStart = BigInt(sorted[0].startTimestamp);
@@ -120,8 +121,8 @@ const buildSnapshots = async (
 
     const snapshotBlock = startBlock > 0n ? startBlock - 1n : startBlock;
     // 2. Gather starting balances and every transfer affecting the vault.
-    const holdersInfo = await getTokenHolders(vault, Number(endBlock));
-    const scanner = new TokenHolderScanner(mainnetRpcUrl, vault);
+    const holdersInfo = await getTokenHolders(vault, Number(endBlock), chainId);
+    const scanner = new TokenHolderScanner(rpcUrl, vault, chainId);
     const initialBalances = await scanner.getBalancesAtBlock(holdersInfo.users, snapshotBlock);
 
     const logs = await fetchTransferLogs(client, vault, startBlock, endBlock);
@@ -200,18 +201,26 @@ const toDistributionForWindow = (
     return { users, holders };
 };
 
-export const distribute = async () => {
-    const mainnetRpcUrl = process.env.MAINNET_RPC_URL;
-    if (!mainnetRpcUrl) {
-        throw new Error("MAINNET_RPC_URL is not set in environment");
+export const distribute = async (chainId = 1) => {
+    let rpcUrl: string; 
+        switch(chainId) {
+            case mainnet.id:
+                rpcUrl = process.env.MAINNET_RPC_URL;
+                break;
+            case base.id:
+                rpcUrl = process.env.BASE_RPC_URL;
+                break;
+        }
+    if (!rpcUrl) {
+        throw new Error(`RPC url for chain ${chainId} is not set in environment`);
     }
 
-    const client = await getClient(mainnet.id);
+    const client = await getClient(chainId);
     const currentBlock = await client.getBlock();
     const currentTimestamp = Number(currentBlock.timestamp);
 
-    const incentives = await getIncentives();
-    const lastDistributions = getLastDistributionsData();
+    const incentives = await getIncentives(chainId);
+    const lastDistributions = getLastDistributionsData(chainId);
     const lastDistributionTimestamp =
         lastDistributions.length === 0 ? 0 : lastDistributions[lastDistributions.length - 1].timestamp;
 
@@ -236,7 +245,7 @@ export const distribute = async () => {
         return;
     }
 
-    rmAndCreateDistributionDir(currentTimestamp);
+    rmAndCreateDistributionDir(currentTimestamp, chainId)
 
     // 2. For each vault replay historical transfers and collect TWAB weights.
     const blockTimestampCache = new Map<string, number>();
@@ -252,7 +261,8 @@ export const distribute = async () => {
             windows,
             currentBlockNumber,
             blockTimestampCache,
-            mainnetRpcUrl,
+            rpcUrl,
+            chainId
         );
 
         if (!snapshots) {
@@ -295,7 +305,7 @@ export const distribute = async () => {
             vault,
             windows: gaugeWindowsSnapshots,
         };
-        writeDistributionGaugeData(currentTimestamp, gaugeSnapshot);
+        writeDistributionGaugeData(currentTimestamp, gaugeSnapshot, chainId);
     }
 
     // 3. Persist the distribution artifact for the Merkle step.
@@ -305,12 +315,12 @@ export const distribute = async () => {
         incentives: allIncentiveDistributions,
     };
 
-    writeDistribution(distribution);
+    writeDistribution(distribution, chainId);
     writeLastDistributionData({
         blockNumber: Number(currentBlock.number),
         timestamp: currentTimestamp,
         sentOnchain: false,
-    });
+    }, chainId);
 
     // Check ended flag
     for (const incentive of incentives) {
@@ -324,5 +334,5 @@ export const distribute = async () => {
         }
     }
 
-    writeIncentives(incentives);
+    writeIncentives(incentives, chainId);
 };

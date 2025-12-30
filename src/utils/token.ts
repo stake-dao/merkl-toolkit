@@ -3,8 +3,14 @@ import { Address } from "viem";
 import * as dotenv from "dotenv";
 import { getHolders, HolderData, writeHolders } from "./holders";
 import { TokenHolderScanner } from "./tokenHolderScanner";
+import { base, mainnet } from "viem/chains";
 
 dotenv.config();
+
+const startBlocksForChain = {
+    [mainnet.id] : 22_575_062,
+    [base.id] : 33_248_274
+}
 
 const MORALIS_API_KEY = process.env.MORALIS_API_KEY;
 
@@ -57,12 +63,12 @@ interface HolderDataExtended extends HolderData {
     fromBlock: number;
 }
 
-export const getTokenHolders = async (vault: Address, toBlock: number): Promise<HolderDataExtended> => {
+export const getTokenHolders = async (vault: Address, toBlock: number, chainId: number): Promise<HolderDataExtended> => {
 
-    const holdersData = getHolders(vault);
-    const fromBlock = holdersData.blockNumber > 0 ? holdersData.blockNumber : 22575062;
+    const holdersData = getHolders(vault, chainId);
+    const fromBlock = holdersData.blockNumber > 0 ? holdersData.blockNumber : startBlocksForChain[chainId];
 
-    const scanner = new TokenHolderScanner(process.env.MAINNET_RPC_URL, vault);
+    const scanner = new TokenHolderScanner(process.env.MAINNET_RPC_URL, vault, chainId);
     const newHolders = await scanner.getHoldersViaEtherscan(process.env.ETHERSCAN_API_KEY, vault, BigInt(fromBlock), BigInt(toBlock));
 
     let users = Array.from(new Set([...holdersData.users, ...newHolders]));
@@ -71,7 +77,7 @@ export const getTokenHolders = async (vault: Address, toBlock: number): Promise<
     writeHolders(vault, {
         blockNumber: toBlock,
         users
-    });
+    }, chainId);
 
     return {
         blockNumber: toBlock,
