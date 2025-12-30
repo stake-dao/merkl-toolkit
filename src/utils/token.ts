@@ -65,10 +65,23 @@ interface HolderDataExtended extends HolderData {
 
 export const getTokenHolders = async (vault: Address, toBlock: number, chainId: number): Promise<HolderDataExtended> => {
 
+    let rpcUrl: string; 
+    switch(chainId) {
+        case mainnet.id:
+            rpcUrl = process.env.MAINNET_RPC_URL;
+            break;
+        case base.id:
+            rpcUrl = process.env.BASE_RPC_URL;
+            break;
+    }
+    if (!rpcUrl) {
+        throw new Error(`RPC url for chain ${chainId} is not set in environment`);
+    }
+
     const holdersData = getHolders(vault, chainId);
     const fromBlock = holdersData.blockNumber > 0 ? holdersData.blockNumber : startBlocksForChain[chainId];
 
-    const scanner = new TokenHolderScanner(process.env.MAINNET_RPC_URL, vault, chainId);
+    const scanner = new TokenHolderScanner(rpcUrl, vault, chainId);
     const newHolders = await scanner.getHoldersViaEtherscan(process.env.ETHERSCAN_API_KEY, vault, BigInt(fromBlock), BigInt(toBlock));
 
     let users = Array.from(new Set([...holdersData.users, ...newHolders]));

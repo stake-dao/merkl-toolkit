@@ -17,7 +17,7 @@ const getHoldersPath = (vault: string, chainId: number): string => {
   return path.resolve(dir, `index.json`);
 };
 
-export const getHolders = (vault: string, chainId): HolderData => {
+export const getHolders = (vault: string, chainId: number): HolderData => {
   // Load the canonical distribution.json (for a timestamp)
   const dir = getHoldersDir(vault, chainId);
   if(!fs.existsSync(dir)) {
