@@ -8,24 +8,24 @@ import { utils } from "ethers";
 import MerkleTree from 'merkletreejs';
 import { Distribution } from '../interfaces/Distribution';
 
-const getMerklePath = (timestamp: number): string => {
-    return path.resolve(__dirname, `../../data/distributions/${timestamp}/merkle.json`);
+const getMerklePath = (timestamp: number, chainId:number): string => {
+    return path.resolve(__dirname, `../../data${chainId !== 1 ? `/${chainId}` : ''}/distributions/${timestamp}/merkle.json`);
 }
 
-export const getMerkle = (timestamp: number): MerkleData => {
-    return safeParse(fs.readFileSync(getMerklePath(timestamp), { encoding: 'utf-8' })) as MerkleData;
+export const getMerkle = (timestamp: number, chainId: number): MerkleData => {
+    return safeParse(fs.readFileSync(getMerklePath(timestamp, chainId), { encoding: 'utf-8' })) as MerkleData;
 }
 
-export const writeMerkle = (timestamp: number, merkle: MerkleData) => {
-    const path = getMerklePath(timestamp);
+export const writeMerkle = (timestamp: number, merkle: MerkleData, chainId: number) => {
+    const path = getMerklePath(timestamp, chainId);
     fs.writeFileSync(path, safeStringify(merkle), { encoding: 'utf-8' });
     console.log(`💾 Merkle saved to ${path}`);
 }
 
-export const writeLastMerkle = (merkle: MerkleData) => {
+export const writeLastMerkle = (merkle: MerkleData, chainId: number) => {
 
     fs.writeFileSync(
-        path.resolve(__dirname, `../../data/last_merkle.json`)
+        path.resolve(__dirname, `../../data${chainId !== 1 ? `/${chainId}` : ''}/last_merkle.json`)
         , safeStringify(merkle),
         { encoding: 'utf-8' }
     );

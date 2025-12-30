@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "distribution": "npx ts-node src/main.ts",
-    "test": "npx ts-node src/tests/yb_default_twab.ts"
+    "test": "npx ts-node src/tests/yb_default_twab.ts",
+    "testBase": "npx ts-node src/tests/usdc_base.ts"
   },
   "keywords": [],
   "author": "",

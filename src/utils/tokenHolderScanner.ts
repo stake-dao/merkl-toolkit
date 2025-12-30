@@ -1,5 +1,5 @@
-import { Address, createPublicClient, getAddress, http, parseAbi } from "viem";
-import { mainnet } from "viem/chains";
+import { Address, createPublicClient, extractChain, getAddress, http, parseAbi } from "viem";
+import * as chains from "viem/chains";
 
 const erc20Abi = parseAbi([
     'event Transfer(address indexed from, address indexed to, uint256 value)',
@@ -14,13 +14,13 @@ export class TokenHolderScanner {
     private tokenAddress: Address;
     private chainId: string;
 
-    constructor(rpcUrl: string, tokenAddress: Address, chainid: string = "1") {
+    constructor(rpcUrl: string, tokenAddress: Address, chainid: number) {
         this.client = createPublicClient({
-            chain: mainnet,
+            chain: extractChain({chains: Object.values(chains), id: chainid as any}),
             transport: http(rpcUrl),
         });
         this.tokenAddress = tokenAddress;
-        this.chainId = chainid;
+        this.chainId = chainid.toString();
     }
 
     /**

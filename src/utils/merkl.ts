@@ -1,5 +1,5 @@
-import { mainnet } from "viem/chains";
-import { MERKL_CONTRACT, NULL_ADDRESS } from "../constants";
+import { base, mainnet } from "viem/chains";
+import { MERKL_CONTRACTS, NULL_ADDRESS } from "../constants";
 import { getClient } from "./rpc";
 import { IncentiveExtended } from "../interfaces/IncentiveExtended";
 import { Incentive } from "../interfaces/Incentive";
@@ -10,7 +10,7 @@ import { merklAbi } from "../abis/Merkl";
 
 const url = "https://raw.githubusercontent.com/stake-dao/api/main"
 const PROTOCOLS = ["balancer", "v2/curve", "pendle"];
-const V2_CURVE_CHAIN_IDS = [1]
+const V2_CURVE_CHAIN_IDS = [mainnet.id, base.id]
 
 interface ProtocolStrategies {
     protocol: string;
@@ -35,27 +35,27 @@ const getAllStakeDaoStrategies = async (): Promise<ProtocolStrategies[]> => {
     }) as ProtocolStrategies[];
 };
 
-export const getMerklLastId = async (): Promise<number> => {
-    const client = await getClient(1);
+export const getMerklLastId = async (chainId: number): Promise<number> => {
+    const client = await getClient(chainId);
 
     return Number(await client.readContract({
-        address: MERKL_CONTRACT,
+        address: MERKL_CONTRACTS[chainId],
         abi: merklAbi,
         functionName: "nbIncentives",
         args: [],
     }));
 };
 
-export const getNewIncentives = async (fromId: number, toId: number): Promise<IncentiveExtended[]> => {
+export const getNewIncentives = async (fromId: number, toId: number, chainId: number): Promise<IncentiveExtended[]> => {
 
     const protocolStrategies = await getAllStakeDaoStrategies();
 
-    const client = await getClient(mainnet.id);
+    const client = await getClient(chainId);
     const incentives: IncentiveExtended[] = [];
 
     for (let i = fromId; i < toId; i++) {
         const incentive = (await client.readContract({
-            address: MERKL_CONTRACT,
+            address: MERKL_CONTRACTS[chainId],
             abi: merklAbi,
             functionName: "incentives",
             args: [BigInt(i)],
