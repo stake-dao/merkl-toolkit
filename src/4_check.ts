@@ -22,7 +22,7 @@ const ABI = parseAbi([
     'function claim(address account, address reward, uint256 claimable, bytes32[] calldata proof) external returns (uint256)'
 ]);
 
-async function main() {
+export const check = async () => {
     console.log("🚀 Starting verification AND simulation script (RAW RPC mode)...");
 
     // 1. Load Merkle Data
@@ -42,9 +42,9 @@ async function main() {
     console.log(`\n🔍 Root Check:`);
     console.log(`   JSON Root:     ${NEW_ROOT}`);
     console.log(`   Contract Root: ${onChainRoot}`);
-    
+
     const needsOverride = onChainRoot !== NEW_ROOT;
-    
+
     if (needsOverride) {
         console.log(`   🛠️  Mismatch detected. Simulating via RAW eth_call with stateDiff.`);
     }
@@ -90,7 +90,7 @@ async function main() {
         const result = claimedResults[i];
 
         if (result.status === 'failure') throw new Error(`RPC Failure for ${claim.user}`);
-        
+
         const alreadyClaimed = result.result as bigint;
 
         if (claim.totalAmount < alreadyClaimed) {
@@ -114,7 +114,7 @@ async function main() {
 
             // Prepare State Override Object
             // Slot 0 is 'root' in your contract (first declared variable)
-            const slot0 = pad("0x0", { size: 32 }); 
+            const slot0 = pad("0x0", { size: 32 });
             const stateOverride = needsOverride ? {
                 [MERKL_CONTRACT]: {
                     stateDiff: {
@@ -152,16 +152,16 @@ async function main() {
         } catch (error: any) {
             failCount++;
             console.error(`❌ [REVERT] Simulation failed for ${claim.user}`);
-            
+
             // Try to parse the RPC error
             const errStr = JSON.stringify(error, null, 2);
-            
+
             if (errStr.includes("execution reverted")) {
-                 console.error(`   👉 REASON: Execution Reverted (likely Invalid Proof or Transfer Failed)`);
-                 // Often the error message is buried in error.cause.data or error.data
-                 if(error.data) console.error(`   👉 Data: ${error.data}`);
+                console.error(`   👉 REASON: Execution Reverted (likely Invalid Proof or Transfer Failed)`);
+                // Often the error message is buried in error.cause.data or error.data
+                if (error.data) console.error(`   👉 Data: ${error.data}`);
             } else {
-                 console.error(`   👉 REASON: ${error.message || "Unknown RPC Error"}`);
+                console.error(`   👉 REASON: ${error.message || "Unknown RPC Error"}`);
             }
         }
     }
@@ -178,8 +178,3 @@ async function main() {
         console.log(`\n✨ SUCCESS: All claimable users verified via simulation.`);
     }
 }
-
-main().catch((err) => {
-    console.error(err);
-    process.exit(1);
-});
