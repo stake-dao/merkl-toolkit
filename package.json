@@ -5,7 +5,6 @@
   "main": "index.js",
   "scripts": {
     "distribution": "npx ts-node src/main.ts",
-    "checks": "npx ts-node src/4_check.ts",
     "test": "npx ts-node src/tests/yb_default_twab.ts"
   },
   "keywords": [],
