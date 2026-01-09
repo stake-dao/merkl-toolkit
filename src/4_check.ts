@@ -8,19 +8,15 @@ import {
     encodeFunctionData,
     pad,
     decodeFunctionResult,
-    Hash
+    Hash,
+    erc20Abi,
+    Address
 } from 'viem';
 import { mainnet } from 'viem/chains';
 import { MERKL_CONTRACT } from './constants';
 import { getClient } from './utils/rpc';
 import fs from 'fs';
-
-// Full ABI needed for simulation (claim function)
-const ABI = parseAbi([
-    'function claimed(address user, address token) external view returns (uint256)',
-    'function root() external view returns (bytes32)',
-    'function claim(address account, address reward, uint256 claimable, bytes32[] calldata proof) external returns (uint256)'
-]);
+import { merklAbi } from './abis/Merkl';
 
 export const check = async () => {
     console.log("🚀 Starting verification AND simulation script (RAW RPC mode)...");
@@ -35,7 +31,7 @@ export const check = async () => {
     // 3. Check On-Chain Root
     const onChainRoot = await client.readContract({
         address: MERKL_CONTRACT,
-        abi: ABI,
+        abi: merklAbi,
         functionName: 'root',
     });
 
@@ -53,16 +49,19 @@ export const check = async () => {
     type ClaimData = { user: Hex, token: Hex, totalAmount: bigint, proof: Hex[] };
     const flatClaims: ClaimData[] = [];
     const claimsObj = (MERKLE_DATA as any).claims;
+    const tokenAddresses: Record<Address, boolean> = {};
 
     for (const [user, userDat] of Object.entries(claimsObj)) {
         const tokens = (userDat as any).tokens;
         for (const [token, tokenDat] of Object.entries(tokens)) {
+            const tokenFormatted = getAddress(token as string);
             flatClaims.push({
                 user: getAddress(user as string),
-                token: getAddress(token as string),
+                token: tokenFormatted,
                 totalAmount: BigInt((tokenDat as any).amount),
                 proof: (tokenDat as any).proof as Hex[]
             });
+            tokenAddresses[tokenFormatted] = true;
         }
     }
 
@@ -72,11 +71,30 @@ export const check = async () => {
     const claimedResults = await client.multicall({
         contracts: flatClaims.map(c => ({
             address: MERKL_CONTRACT,
-            abi: ABI,
+            abi: merklAbi,
             functionName: 'claimed',
             args: [c.user, c.token]
         }))
     });
+
+    const decimals = await client.multicall({
+        contracts: Object.keys(tokenAddresses).map(c => ({
+            address: c,
+            abi: erc20Abi,
+            functionName: 'decimals',
+            args: []
+        })),
+    });
+
+    const tokenDecimals: Record<Address, number> = {};
+    for (let i = 0; i < Object.keys(tokenAddresses).length; i++) {
+        const res = decimals[i];
+        if (res.status === 'success') {
+            tokenDecimals[Object.keys(tokenAddresses)[i] as Address] = Number(BigInt(res.result));
+        } else {
+            throw new Error(res.error.message);
+        }
+    }
 
     // 6. Verification Loop
     let successCount = 0;
@@ -107,7 +125,7 @@ export const check = async () => {
         try {
             // Prepare Calldata
             const calldata = encodeFunctionData({
-                abi: ABI,
+                abi: merklAbi,
                 functionName: 'claim',
                 args: [claim.user, claim.token, claim.totalAmount, claim.proof]
             });
@@ -140,14 +158,15 @@ export const check = async () => {
 
             // Decode result (claim returns uint256 amount)
             const decodedAmount = decodeFunctionResult({
-                abi: ABI,
+                abi: merklAbi,
                 functionName: 'claim',
                 data: rawResult
             });
 
             successCount++;
+            const decimals = tokenDecimals[claim.token];
             console.log(`✅ [SIMULATED] ${claim.user.slice(0, 6)}...`);
-            console.log(`   Claimed in sim: ${formatUnits(decodedAmount as bigint, 18)} | Token: ${claim.token}`);
+            console.log(`   Claimed in sim: ${formatUnits(decodedAmount as bigint, decimals)} | Token: ${claim.token}`);
 
         } catch (error: any) {
             failCount++;
@@ -178,3 +197,5 @@ export const check = async () => {
         console.log(`\n✨ SUCCESS: All claimable users verified via simulation.`);
     }
 }
+
+check();
