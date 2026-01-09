@@ -1,14 +1,10 @@
 import {
-    parseAbi,
-    encodeAbiParameters,
-    keccak256,
     formatUnits,
     getAddress,
     Hex,
     encodeFunctionData,
     pad,
     decodeFunctionResult,
-    Hash,
     erc20Abi,
     Address
 } from 'viem';
@@ -49,25 +45,37 @@ export const check = async () => {
     type ClaimData = { user: Hex, token: Hex, totalAmount: bigint, proof: Hex[] };
     const flatClaims: ClaimData[] = [];
     const claimsObj = (MERKLE_DATA as any).claims;
-    const tokenAddresses: Record<Address, boolean> = {};
+    const distinctTokens: Set<Address> = new Set();
+
+    // Aggregators for Merkle totals
+    const merkleTotals: Record<Address, bigint> = {};
 
     for (const [user, userDat] of Object.entries(claimsObj)) {
         const tokens = (userDat as any).tokens;
         for (const [token, tokenDat] of Object.entries(tokens)) {
             const tokenFormatted = getAddress(token as string);
+            const amount = BigInt((tokenDat as any).amount);
+
             flatClaims.push({
                 user: getAddress(user as string),
                 token: tokenFormatted,
-                totalAmount: BigInt((tokenDat as any).amount),
+                totalAmount: amount,
                 proof: (tokenDat as any).proof as Hex[]
             });
-            tokenAddresses[tokenFormatted] = true;
+
+            distinctTokens.add(tokenFormatted);
+
+            // Accumulate total defined in Merkle Tree
+            merkleTotals[tokenFormatted] = (merkleTotals[tokenFormatted] || 0n) + amount;
         }
     }
 
-    console.log(`\n📊 Analyzing & Simulating ${flatClaims.length} claims...`);
+    console.log(`\n📊 Analyzing & Simulating ${flatClaims.length} claims across ${distinctTokens.size} tokens...`);
 
-    // 5. Fetch 'claimed' amounts (Multicall)
+    // 5. Fetch Data (Multicall)
+    const tokenList = Array.from(distinctTokens);
+
+    // 5a. Fetch 'claimed' amounts for every user
     const claimedResults = await client.multicall({
         contracts: flatClaims.map(c => ({
             address: MERKL_CONTRACT,
@@ -77,47 +85,113 @@ export const check = async () => {
         }))
     });
 
-    const decimals = await client.multicall({
-        contracts: Object.keys(tokenAddresses).map(c => ({
-            address: c,
+    // 5b. Fetch Token Decimals
+    const decimalsResults = await client.multicall({
+        contracts: tokenList.map(t => ({
+            address: t,
             abi: erc20Abi,
             functionName: 'decimals',
             args: []
         })),
     });
 
-    const tokenDecimals: Record<Address, number> = {};
-    for (let i = 0; i < Object.keys(tokenAddresses).length; i++) {
-        const res = decimals[i];
-        if (res.status === 'success') {
-            tokenDecimals[Object.keys(tokenAddresses)[i] as Address] = Number(BigInt(res.result));
-        } else {
-            throw new Error(res.error.message);
+    // 5c. Fetch Contract Balances (To check solvency)
+    const balanceResults = await client.multicall({
+        contracts: tokenList.map(t => ({
+            address: t,
+            abi: erc20Abi,
+            functionName: 'balanceOf',
+            args: [MERKL_CONTRACT]
+        }))
+    });
+
+    // Process Token Info
+    const tokenInfo: Record<Address, { decimals: number, balance: bigint }> = {};
+
+    for (let i = 0; i < tokenList.length; i++) {
+        const token = tokenList[i];
+        const decimalRes = decimalsResults[i];
+        const balanceRes = balanceResults[i];
+
+        if (decimalRes.status !== 'success' || balanceRes.status !== 'success') {
+            throw new Error(`Failed to fetch info for token ${token}`);
         }
+
+        tokenInfo[token] = {
+            decimals: Number(decimalRes.result),
+            balance: balanceRes.result as bigint
+        };
     }
 
-    // 6. Verification Loop
+    // --- NEW: GLOBAL SOLVENCY CHECK ---
+    console.log(`\n💰 Global Solvency & Distribution Analysis:`);
+    console.log("---------------------------------------------------");
+
+    // Calculate global stats per token
+    const tokenStats: Record<Address, { claimed: bigint, pending: bigint }> = {};
+
+    for (let i = 0; i < flatClaims.length; i++) {
+        const claim = flatClaims[i];
+        const res = claimedResults[i];
+
+        if (res.status === 'failure') throw new Error(`RPC Failure for ${claim.user}`);
+        const alreadyClaimed = res.result as bigint;
+
+        if (!tokenStats[claim.token]) {
+            tokenStats[claim.token] = { claimed: 0n, pending: 0n };
+        }
+
+        // Integrity Check: New Amount >= Before
+        if (claim.totalAmount < alreadyClaimed) {
+            throw new Error(`🚨 CRITICAL: ${claim.user} JSON amount < OnChain claimed. Merkle regression detected!`);
+        }
+
+        const toDistribute = claim.totalAmount - alreadyClaimed;
+
+        tokenStats[claim.token].claimed += alreadyClaimed;
+        tokenStats[claim.token].pending += toDistribute;
+    }
+
+    // Display Stats
+    for (const token of tokenList) {
+        const decimals = tokenInfo[token].decimals;
+        const stats = tokenStats[token];
+        const totalMerkle = merkleTotals[token];
+        const contractBalance = tokenInfo[token].balance;
+
+        console.log(`Token: ${token}`);
+        console.log(`   Total in Merkle:   ${formatUnits(totalMerkle, decimals)}`);
+        console.log(`   Already Claimed:   ${formatUnits(stats.claimed, decimals)}`);
+        console.log(`   Pending (Rewards): ${formatUnits(stats.pending, decimals)}`);
+        console.log(`   Contract Balance:  ${formatUnits(contractBalance, decimals)}`);
+
+        if (contractBalance < stats.pending) {
+            console.error(`   ⚠️  WARNING: Contract Balance < Pending Rewards! (Deficit: ${formatUnits(stats.pending - contractBalance, decimals)})`);
+            process.exit(1);
+        } else {
+            console.log(`   ✅  Solvency Check Passed`);
+        }
+        console.log("");
+    }
+    console.log("---------------------------------------------------");
+
+
+    // 6. Verification Loop (Simulation)
     let successCount = 0;
     let failCount = 0;
+    let skippedCount = 0;
 
-    console.log(`\n📝 Detailed Results:`);
-    console.log("---------------------------------------------------");
+    console.log(`\n📝 Detailed Simulation Results:`);
 
     for (let i = 0; i < flatClaims.length; i++) {
         const claim = flatClaims[i];
         const result = claimedResults[i];
-
-        if (result.status === 'failure') throw new Error(`RPC Failure for ${claim.user}`);
-
-        const alreadyClaimed = result.result as bigint;
-
-        if (claim.totalAmount < alreadyClaimed) {
-            throw new Error(`🚨 CRITICAL: ${claim.user} JSON amount < OnChain claimed`);
-        }
+        const alreadyClaimed = result.result as bigint; // Checked success above
 
         const claimableDelta = claim.totalAmount - alreadyClaimed;
 
         if (claimableDelta === 0n) {
+            skippedCount++;
             continue;
         }
 
@@ -131,7 +205,6 @@ export const check = async () => {
             });
 
             // Prepare State Override Object
-            // Slot 0 is 'root' in your contract (first declared variable)
             const slot0 = pad("0x0", { size: 32 });
             const stateOverride = needsOverride ? {
                 [MERKL_CONTRACT]: {
@@ -141,22 +214,19 @@ export const check = async () => {
                 }
             } : undefined;
 
-            // Execute Raw eth_call
-            // Params: [{to, data, from}, blockTag, stateOverride]
             const rawResult = await client.request({
                 method: 'eth_call',
                 params: [
                     {
                         to: MERKL_CONTRACT,
-                        from: claim.user, // Simulate call from user
+                        from: claim.user,
                         data: calldata
                     },
                     'latest',
-                    stateOverride as any // Cast necessary as strict types might mismatch slightly
+                    stateOverride as any
                 ]
             });
 
-            // Decode result (claim returns uint256 amount)
             const decodedAmount = decodeFunctionResult({
                 abi: merklAbi,
                 functionName: 'claim',
@@ -164,31 +234,27 @@ export const check = async () => {
             });
 
             successCount++;
-            const decimals = tokenDecimals[claim.token];
-            console.log(`✅ [SIMULATED] ${claim.user.slice(0, 6)}...`);
-            console.log(`   Claimed in sim: ${formatUnits(decodedAmount as bigint, decimals)} | Token: ${claim.token}`);
+            const decimals = tokenInfo[claim.token].decimals;
+            console.log(`✅ [SIMULATED] ${claim.user.slice(0, 6)}... | +${formatUnits(decodedAmount as bigint, decimals)} tokens`);
 
         } catch (error: any) {
             failCount++;
             console.error(`❌ [REVERT] Simulation failed for ${claim.user}`);
-
-            // Try to parse the RPC error
+            // Error handling simplified for brevity
             const errStr = JSON.stringify(error, null, 2);
-
             if (errStr.includes("execution reverted")) {
-                console.error(`   👉 REASON: Execution Reverted (likely Invalid Proof or Transfer Failed)`);
-                // Often the error message is buried in error.cause.data or error.data
                 if (error.data) console.error(`   👉 Data: ${error.data}`);
             } else {
-                console.error(`   👉 REASON: ${error.message || "Unknown RPC Error"}`);
+                console.error(`   👉 ${error.message}`);
             }
         }
     }
 
     console.log("---------------------------------------------------");
     console.log(`\n🏁 Summary:`);
-    console.log(`   Successful Simulations: ${successCount}`);
-    console.log(`   Failed Simulations:     ${failCount}`);
+    console.log(`   Fully Claimed (Skipped): ${skippedCount}`);
+    console.log(`   Successful Simulations:  ${successCount}`);
+    console.log(`   Failed Simulations:      ${failCount}`);
 
     if (failCount > 0) {
         console.error(`\n🚨 FAILURE: Some users cannot claim.`);
@@ -197,5 +263,3 @@ export const check = async () => {
         console.log(`\n✨ SUCCESS: All claimable users verified via simulation.`);
     }
 }
-
-check();
