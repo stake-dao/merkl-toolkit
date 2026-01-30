@@ -9,7 +9,7 @@ import { Strategy } from "../interfaces/Strategy";
 import { merklAbi } from "../abis/Merkl";
 
 const url = "https://raw.githubusercontent.com/stake-dao/api/main"
-const PROTOCOLS = ["balancer", "v2/curve", "pendle"];
+const PROTOCOLS = ["v2/balancer", "v2/curve", "pendle"];
 const V2_CURVE_CHAIN_IDS = [1]
 
 interface ProtocolStrategies {
@@ -19,7 +19,7 @@ interface ProtocolStrategies {
 
 const getAllStakeDaoStrategies = async (): Promise<ProtocolStrategies[]> => {
     const datas = await Promise.all(PROTOCOLS.map((protocol) => {
-        if (protocol !== "v2/curve") {
+        if (!protocol.startsWith("v2")) {
             return [axios.get(`${url}/api/strategies/${protocol}/1.json`)]
         }
 
