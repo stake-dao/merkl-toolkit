@@ -19,7 +19,7 @@ interface ProtocolStrategies {
 
 const getAllStakeDaoStrategies = async (): Promise<ProtocolStrategies[]> => {
     const datas = await Promise.all(PROTOCOLS.map((protocol) => {
-        if (protocol !== "v2/curve") {
+        if (!protocol.startsWith("v2")) {
             return [axios.get(`${url}/api/strategies/${protocol}/1.json`)]
         }
 
