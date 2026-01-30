@@ -9,7 +9,7 @@ import { Strategy } from "../interfaces/Strategy";
 import { merklAbi } from "../abis/Merkl";
 
 const url = "https://raw.githubusercontent.com/stake-dao/api/main"
-const PROTOCOLS = ["balancer", "v2/curve", "pendle"];
+const PROTOCOLS = ["v2/balancer", "v2/curve", "pendle"];
 const V2_CURVE_CHAIN_IDS = [1]
 
 interface ProtocolStrategies {
