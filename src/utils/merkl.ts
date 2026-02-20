@@ -15,9 +15,18 @@ const VM_HOOK_ADDRESSES: Set<Address> = new Set([
     getAddress("0x68654D460fDF3231B49B25817cBBD72d8d291Fcf"), // hook v2
 ]);
 
+// Known AllMight addresses
+// Update when AllMight addresses changes
+const ALL_MIGHT_ADDRESSES: Set<Address> = new Set([
+    getAddress("0xDBd24b092f686b12650EC1450e3A7138F714506c"), // mainnet
+]);
+
 export const getIncentiveSource = (sender: string): IncentiveSource => {
     try {
-        return VM_HOOK_ADDRESSES.has(getAddress(sender)) ? "vm" : "direct";
+        if (VM_HOOK_ADDRESSES.has(getAddress(sender))) return 'vm';
+        if (ALL_MIGHT_ADDRESSES.has(getAddress(sender))) return 'gauge';
+
+        return "direct";
     } catch {
         return "direct";
     }

@@ -1,6 +1,6 @@
 import { Incentive } from "./Incentive";
 
-export type IncentiveSource = "vm" | "direct";
+export type IncentiveSource = "vm" | "direct" | "gauge";
 
 export interface IncentiveExtended extends Incentive {
     id: number;
