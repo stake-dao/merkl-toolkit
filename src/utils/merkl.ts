@@ -1,12 +1,27 @@
 import { mainnet } from "viem/chains";
 import { MERKL_CONTRACT, NULL_ADDRESS } from "../constants";
 import { getClient } from "./rpc";
-import { IncentiveExtended } from "../interfaces/IncentiveExtended";
+import { IncentiveExtended, IncentiveSource } from "../interfaces/IncentiveExtended";
 import { Incentive } from "../interfaces/Incentive";
 import { Address, erc20Abi, getAddress } from "viem";
 import axios from "axios";
 import { Strategy } from "../interfaces/Strategy";
 import { merklAbi } from "../abis/Merkl";
+
+// Known VoteMarket IncentiveGaugeHook addresses (Arbitrum → Mainnet bridge senders)
+// Update when a new hook version is deployed (see contracts-monorepo/packages/periphery/script/votemarket-infra/)
+const VM_HOOK_ADDRESSES: Set<Address> = new Set([
+    getAddress("0x06Ab7052b00d038F8EeF33B267C23b5154cE8cDc"), // hook v1
+    getAddress("0x68654D460fDF3231B49B25817cBBD72d8d291Fcf"), // hook v2
+]);
+
+export const getIncentiveSource = (sender: string): IncentiveSource => {
+    try {
+        return VM_HOOK_ADDRESSES.has(getAddress(sender)) ? "vm" : "direct";
+    } catch {
+        return "direct";
+    }
+};
 
 const url = "https://raw.githubusercontent.com/stake-dao/api/main"
 const PROTOCOLS = ["v2/balancer", "v2/curve", "pendle"];
@@ -115,6 +130,7 @@ export const getNewIncentives = async (fromId: number, toId: number): Promise<In
             rewardSymbol: symbol,
             ended: false,
             distributedUntil: incentive[3],
+            source: getIncentiveSource(incentive[6]),
         });
     }
 

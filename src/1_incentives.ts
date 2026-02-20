@@ -1,8 +1,21 @@
-import { getMerklLastId, getNewIncentives } from './utils/merkl';
+import { getMerklLastId, getNewIncentives, getIncentiveSource } from './utils/merkl';
 import { getIncentives, writeIncentives } from './utils/incentives';
 
 export const fetchIncentives = async () => {
     let incentives = await getIncentives();
+
+    // Backfill source field for existing incentives missing it
+    let backfilled = 0;
+    for (const incentive of incentives) {
+        if (incentive.source === undefined) {
+            incentive.source = getIncentiveSource(incentive.sender);
+            backfilled++;
+        }
+    }
+    if (backfilled > 0) {
+        console.log(`🔧 Backfilled 'source' field for ${backfilled} incentive(s)`);
+        writeIncentives(incentives);
+    }
 
     // Fetch new ones
     const incentiveIds = incentives.map(i => i.id)
