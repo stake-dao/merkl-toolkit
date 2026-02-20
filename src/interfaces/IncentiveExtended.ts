@@ -1,5 +1,7 @@
 import { Incentive } from "./Incentive";
 
+export type IncentiveSource = "vm" | "direct";
+
 export interface IncentiveExtended extends Incentive {
     id: number;
     rewardDecimals: number;
@@ -7,4 +9,5 @@ export interface IncentiveExtended extends Incentive {
     vault: string;
     ended: boolean;
     distributedUntil: bigint;
+    source: IncentiveSource;
 }
