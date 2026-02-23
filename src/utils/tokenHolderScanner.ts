@@ -182,6 +182,11 @@ export class TokenHolderScanner {
 
                 for (let j = 0; j < batch.length; j++) {
                     const result = results[j];
+
+                    if(result.status === 'failure') {
+                        throw new Error(`Error fetching balances`);
+                    }
+
                     if (result.status === 'success' && result.result) {
                         const balance = BigInt(result.result);
                         if (balance > BigInt(0)) {
@@ -205,7 +210,7 @@ export class TokenHolderScanner {
                             holders.set(address, balance);
                         }
                     } catch (err) {
-                        console.error(`Error fetching balance for ${address}:`, err);
+                        throw new Error(`Error fetching balance for ${address}`);
                     }
                 }
             }
