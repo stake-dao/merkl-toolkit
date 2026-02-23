@@ -210,6 +210,7 @@ export class TokenHolderScanner {
                             holders.set(address, balance);
                         }
                     } catch (err) {
+                        console.error(err);
                         throw new Error(`Error fetching balance for ${address}`);
                     }
                 }
