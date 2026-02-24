@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "distribution": "npx ts-node src/main.ts",
+    "debts-report": "npx ts-node src/analysis/debts_report.ts",
     "test": "npx ts-node src/tests/yb_default_twab.ts"
   },
   "keywords": [],

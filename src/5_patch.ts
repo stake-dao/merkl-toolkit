@@ -127,6 +127,9 @@ export const patch = async () => {
         if (!fs.existsSync(debtsPath)) {
             fs.writeFileSync(debtsPath, safeStringify(debts), { encoding: 'utf-8' });
             console.log(`💾 Debts saved to ${debtsPath}`);
+
+            const initialDebtsPath = path.resolve(__dirname, '../data/initial_debts.json');
+            fs.writeFileSync(initialDebtsPath, safeStringify(debts), { encoding: 'utf-8' });
         } else {
             console.log(`⚠️  data/debts.json already exists — skipping write (debts may have been partially repaid)`);
         }
