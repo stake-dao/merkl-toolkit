@@ -8,6 +8,9 @@ import { patch } from "./5_patch";
 dotenv.config();
 
 const main = async () => {
+    // Patch overclaimed amounts (runs on previous merkle before new rewards)
+    await patch();
+
     // Fetch new incentives
     await fetchIncentives();
 
@@ -16,9 +19,6 @@ const main = async () => {
 
     // Generate merkle
     await generateMerkle();
-
-    // Patch overclaimed amounts
-    await patch();
 
     // Check claims
     await check();
