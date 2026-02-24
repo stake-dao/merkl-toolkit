@@ -182,6 +182,10 @@ export class TokenHolderScanner {
 
                 for (let j = 0; j < batch.length; j++) {
                     const result = results[j];
+                    if (result.status === 'failure') {
+                        throw new Error("getBalancesAtBlock, faillure rpc request");
+                    }
+
                     if (result.status === 'success' && result.result) {
                         const balance = BigInt(result.result);
                         if (balance > BigInt(0)) {
@@ -206,6 +210,9 @@ export class TokenHolderScanner {
                         }
                     } catch (err) {
                         console.error(`Error fetching balance for ${address}:`, err);
+
+                        // Error, we have to kill the process
+                        process.exit(1);
                     }
                 }
             }
