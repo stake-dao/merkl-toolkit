@@ -7,6 +7,7 @@ import { MerkleData } from '../interfaces/MerkleData';
 import { utils } from "ethers";
 import MerkleTree from 'merkletreejs';
 import { Distribution } from '../interfaces/Distribution';
+import { TREASURY_ADDRESS } from '../constants';
 
 const getMerklePath = (timestamp: number): string => {
     return path.resolve(__dirname, `../../data/distributions/${timestamp}/merkle.json`);
@@ -34,7 +35,8 @@ export const writeLastMerkle = (merkle: MerkleData) => {
 
 export const createCombineDistribution = (
     currentDistribution: Distribution,
-    previousMerkleData: MerkleData
+    previousMerkleData: MerkleData,
+    debts?: Record<string, Record<string, string>>
 ): UniversalMerkle => {
 
     // Convert distribution to merkle format
@@ -45,7 +47,7 @@ export const createCombineDistribution = (
         for(const user of incentive.users) {
             const userChecksum = getAddress(user.user);
             if(!merkleDistribution[userChecksum]) {
-             merkleDistribution[userChecksum] = {};   
+             merkleDistribution[userChecksum] = {};
             }
 
             if(!merkleDistribution[userChecksum][tokenChecksum]) {
@@ -78,6 +80,50 @@ export const createCombineDistribution = (
             ] = (currentAmount + newAmount).toString();
         });
     });
+
+    // Redirect new rewards from indebted users to treasury
+    if (debts) {
+        for (const [user, tokens] of Object.entries(normalizedMerkleDistribution)) {
+            const userDebts = debts[user];
+            if (!userDebts) continue;
+
+            for (const [token, amountStr] of Object.entries(tokens)) {
+                const debtStr = userDebts[token];
+                if (!debtStr) continue;
+
+                const newReward = BigInt(amountStr);
+                const debt = BigInt(debtStr);
+                if (newReward === 0n) continue;
+
+                const redirect = newReward < debt ? newReward : debt;
+
+                // Reduce user's new reward
+                normalizedMerkleDistribution[user][token] = (newReward - redirect).toString();
+
+                // Add to treasury
+                if (!normalizedMerkleDistribution[TREASURY_ADDRESS]) {
+                    normalizedMerkleDistribution[TREASURY_ADDRESS] = {};
+                }
+                const treasuryCurrent = BigInt(normalizedMerkleDistribution[TREASURY_ADDRESS][token] || "0");
+                normalizedMerkleDistribution[TREASURY_ADDRESS][token] = (treasuryCurrent + redirect).toString();
+
+                // Update debt
+                const remainingDebt = debt - redirect;
+                if (remainingDebt === 0n) {
+                    delete userDebts[token];
+                } else {
+                    userDebts[token] = remainingDebt.toString();
+                }
+
+                console.log(`  🔄 Redirected ${redirect.toString()} of ${token} from ${user} to treasury (remaining debt: ${remainingDebt.toString()})`);
+            }
+
+            // Clean up user entry if no debts left
+            if (Object.keys(userDebts).length === 0) {
+                delete debts[user];
+            }
+        }
+    }
 
     // Then merge with previous merkle data
     if (previousMerkleData && previousMerkleData.claims) {

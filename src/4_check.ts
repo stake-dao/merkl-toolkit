@@ -12,6 +12,7 @@ import { mainnet } from 'viem/chains';
 import { MERKL_CONTRACT } from './constants';
 import { getClient } from './utils/rpc';
 import fs from 'fs';
+import path from 'path';
 import { merklAbi } from './abis/Merkl';
 
 export const check = async () => {
@@ -20,6 +21,20 @@ export const check = async () => {
     // 1. Load Merkle Data
     const MERKLE_DATA = JSON.parse(fs.readFileSync("./data/last_merkle.json", { encoding: 'utf-8' }));
     const NEW_ROOT = MERKLE_DATA.merkleRoot as Hex;
+
+    // 1b. Load debts and aggregate per token
+    const debtsPath = path.resolve(__dirname, '../data/debts.json');
+    let debtPerToken: Record<Address, bigint> = {};
+    if (fs.existsSync(debtsPath)) {
+        const debts: Record<string, Record<string, string>> = JSON.parse(fs.readFileSync(debtsPath, { encoding: 'utf-8' }));
+        for (const tokens of Object.values(debts)) {
+            for (const [token, amount] of Object.entries(tokens)) {
+                const t = getAddress(token) as Address;
+                debtPerToken[t] = (debtPerToken[t] || 0n) + BigInt(amount);
+            }
+        }
+        console.log(`📋 Loaded debts for ${Object.keys(debts).length} users`);
+    }
 
     // 2. Client Setup
     const client = await getClient(mainnet.id);
@@ -191,8 +206,16 @@ export const check = async () => {
         console.log(`   Pending (Rewards): ${formatUnits(stats.pending, decimals)}`);
         console.log(`   Contract Balance:  ${formatUnits(contractBalance, decimals)}`);
 
-        if (contractBalance < stats.pending) {
-            console.error(`   ⚠️  WARNING: Contract Balance < Pending Rewards! (Deficit: ${formatUnits(stats.pending - contractBalance, decimals)})`);
+        const debt = debtPerToken[token] || 0n;
+        const adjustedPending = stats.pending - debt;
+
+        if (debt > 0n) {
+            console.log(`   Known Debt:        ${formatUnits(debt, decimals)}`);
+            console.log(`   Adjusted Pending:  ${formatUnits(adjustedPending, decimals)}`);
+        }
+
+        if (contractBalance < adjustedPending) {
+            console.error(`   ⚠️  WARNING: Contract Balance < Adjusted Pending Rewards! (Deficit: ${formatUnits(adjustedPending - contractBalance, decimals)})`);
             process.exit(1);
         } else {
             console.log(`   ✅  Solvency Check Passed`);
