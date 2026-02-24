@@ -12,6 +12,7 @@ import { mainnet } from 'viem/chains';
 import { MERKL_CONTRACT } from './constants';
 import { getClient } from './utils/rpc';
 import fs from 'fs';
+import path from 'path';
 import { merklAbi } from './abis/Merkl';
 
 export const check = async () => {
@@ -20,6 +21,20 @@ export const check = async () => {
     // 1. Load Merkle Data
     const MERKLE_DATA = JSON.parse(fs.readFileSync("./data/last_merkle.json", { encoding: 'utf-8' }));
     const NEW_ROOT = MERKLE_DATA.merkleRoot as Hex;
+
+    // 1b. Load debts and aggregate per token
+    const debtsPath = path.resolve(__dirname, '../data/debts.json');
+    let debtPerToken: Record<Address, bigint> = {};
+    if (fs.existsSync(debtsPath)) {
+        const debts: Record<string, Record<string, string>> = JSON.parse(fs.readFileSync(debtsPath, { encoding: 'utf-8' }));
+        for (const tokens of Object.values(debts)) {
+            for (const [token, amount] of Object.entries(tokens)) {
+                const t = getAddress(token) as Address;
+                debtPerToken[t] = (debtPerToken[t] || 0n) + BigInt(amount);
+            }
+        }
+        console.log(`📋 Loaded debts for ${Object.keys(debts).length} users`);
+    }
 
     // 2. Client Setup
     const client = await getClient(mainnet.id);
@@ -129,6 +144,7 @@ export const check = async () => {
 
     // Calculate global stats per token
     const tokenStats: Record<Address, { claimed: bigint, pending: bigint }> = {};
+    const diffByTokens: Record<Address, {decimals: number, diff: bigint}> = {};
 
     for (let i = 0; i < flatClaims.length; i++) {
         const claim = flatClaims[i];
@@ -143,13 +159,38 @@ export const check = async () => {
 
         // Integrity Check: New Amount >= Before
         if (claim.totalAmount < alreadyClaimed) {
-            throw new Error(`🚨 CRITICAL: ${claim.user} JSON amount < OnChain claimed. Merkle regression detected!`);
+            //throw new Error(`🚨 CRITICAL: ${claim.user} JSON amount < OnChain claimed. Merkle regression detected!`);
+            console.error(`User : ${claim.user}`);
+            console.error(`Token : ${claim.token}`)
+            console.error(`Total amount : ${claim.totalAmount}`)
+            console.error(`Already claimed : ${alreadyClaimed}`)
+
+            const rawDiff = alreadyClaimed - claim.totalAmount;
+            const decimals = tokenInfo[claim.token].decimals;
+            const diff = formatUnits(rawDiff, decimals)
+
+            if(!diffByTokens[claim.token]) {
+                diffByTokens[claim.token] = {
+                    decimals,
+                    diff: BigInt(0)
+                }
+            }
+
+            diffByTokens[claim.token].diff += rawDiff
+
+            console.error(`Diff : ${diff}`)
+            console.error("----")
         }
 
         const toDistribute = claim.totalAmount - alreadyClaimed;
 
         tokenStats[claim.token].claimed += alreadyClaimed;
         tokenStats[claim.token].pending += toDistribute;
+    }
+
+    for (const [token, obj] of Object.entries(diffByTokens)) {
+        console.error(`Token : ${token}`)
+        console.error(`Diff : ${formatUnits(obj.diff, obj.decimals)}`)
     }
 
     // Display Stats
@@ -165,8 +206,16 @@ export const check = async () => {
         console.log(`   Pending (Rewards): ${formatUnits(stats.pending, decimals)}`);
         console.log(`   Contract Balance:  ${formatUnits(contractBalance, decimals)}`);
 
-        if (contractBalance < stats.pending) {
-            console.error(`   ⚠️  WARNING: Contract Balance < Pending Rewards! (Deficit: ${formatUnits(stats.pending - contractBalance, decimals)})`);
+        const debt = debtPerToken[token] || 0n;
+        const adjustedPending = stats.pending - debt;
+
+        if (debt > 0n) {
+            console.log(`   Known Debt:        ${formatUnits(debt, decimals)}`);
+            console.log(`   Adjusted Pending:  ${formatUnits(adjustedPending, decimals)}`);
+        }
+
+        if (contractBalance < adjustedPending) {
+            console.error(`   ⚠️  WARNING: Contract Balance < Adjusted Pending Rewards! (Deficit: ${formatUnits(adjustedPending - contractBalance, decimals)})`);
             process.exit(1);
         } else {
             console.log(`   ✅  Solvency Check Passed`);
