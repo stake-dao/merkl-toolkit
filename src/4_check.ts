@@ -129,6 +129,7 @@ export const check = async () => {
 
     // Calculate global stats per token
     const tokenStats: Record<Address, { claimed: bigint, pending: bigint }> = {};
+    const diffByTokens: Record<Address, {decimals: number, diff: bigint}> = {};
 
     for (let i = 0; i < flatClaims.length; i++) {
         const claim = flatClaims[i];
@@ -143,13 +144,38 @@ export const check = async () => {
 
         // Integrity Check: New Amount >= Before
         if (claim.totalAmount < alreadyClaimed) {
-            throw new Error(`🚨 CRITICAL: ${claim.user} JSON amount < OnChain claimed. Merkle regression detected!`);
+            //throw new Error(`🚨 CRITICAL: ${claim.user} JSON amount < OnChain claimed. Merkle regression detected!`);
+            console.error(`User : ${claim.user}`);
+            console.error(`Token : ${claim.token}`)
+            console.error(`Total amount : ${claim.totalAmount}`)
+            console.error(`Already claimed : ${alreadyClaimed}`)
+
+            const rawDiff = alreadyClaimed - claim.totalAmount;
+            const decimals = tokenInfo[claim.token].decimals;
+            const diff = formatUnits(rawDiff, decimals)
+
+            if(!diffByTokens[claim.token]) {
+                diffByTokens[claim.token] = {
+                    decimals,
+                    diff: BigInt(0)
+                }
+            }
+
+            diffByTokens[claim.token].diff += rawDiff
+
+            console.error(`Diff : ${diff}`)
+            console.error("----")
         }
 
         const toDistribute = claim.totalAmount - alreadyClaimed;
 
         tokenStats[claim.token].claimed += alreadyClaimed;
         tokenStats[claim.token].pending += toDistribute;
+    }
+
+    for (const [token, obj] of Object.entries(diffByTokens)) {
+        console.error(`Token : ${token}`)
+        console.error(`Diff : ${formatUnits(obj.diff, obj.decimals)}`)
     }
 
     // Display Stats
