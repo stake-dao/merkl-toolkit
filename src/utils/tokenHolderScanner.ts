@@ -226,12 +226,18 @@ export class TokenHolderScanner {
     }
 
     public async getTotalSupply(vault: Address, blockNumber: bigint): Promise<bigint> {
-        return await this.client.readContract({
-            address: vault,
-            abi: erc20Abi,
-            functionName: 'totalSupply',
-            args: [],
-            blockNumber,
-        });
+        try {
+            return await this.client.readContract({
+                address: vault,
+                abi: erc20Abi,
+                functionName: 'totalSupply',
+                args: [],
+                blockNumber,
+            });
+        }
+        catch (e) {
+            console.error(e);
+            process.exit(1);
+        }
     }
 }
