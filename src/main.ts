@@ -3,10 +3,14 @@ import * as dotenv from 'dotenv';
 import { distribute } from "./2_distribution";
 import { generateMerkle } from "./3_merkle";
 import { check } from "./4_check";
+import { patch } from "./5_patch";
 
 dotenv.config();
 
 const main = async () => {
+    // Patch overclaimed amounts (runs on previous merkle before new rewards)
+    //await patch();
+
     // Fetch new incentives
     await fetchIncentives();
 

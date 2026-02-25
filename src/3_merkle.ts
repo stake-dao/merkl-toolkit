@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import { getAddress } from "viem";
 import { getDistribution } from "./utils/distribution";
 import {
@@ -12,6 +14,7 @@ import {
     writeMerkle,
 } from "./utils/merkle";
 import { MerkleData } from "./interfaces/MerkleData";
+import { safeStringify } from "./utils/parse";
 
 export const generateMerkle = async () => {
     console.log("🔄 Starting merkle generation...");
@@ -51,11 +54,33 @@ export const generateMerkle = async () => {
         `✅ Distribution loaded with ${currentDistribution.incentives.length} incentives`
     );
 
+    // Load debts if they exist
+    const debtsPath = path.resolve(__dirname, "../data/debts.json");
+    let debts: Record<string, Record<string, string>> | undefined;
+    if (fs.existsSync(debtsPath)) {
+        debts = JSON.parse(fs.readFileSync(debtsPath, { encoding: "utf-8" }));
+        const debtorCount = Object.keys(debts!).length;
+        console.log(`📋 Loaded debts for ${debtorCount} users`);
+    }
+
     console.log("➕ Combining distributions...");
     const distributionCombined = createCombineDistribution(
         currentDistribution,
-        merkle
+        merkle,
+        debts
     );
+
+    // Save updated debts
+    if (debts) {
+        const remainingDebtors = Object.keys(debts).length;
+        if (remainingDebtors === 0) {
+            fs.unlinkSync(debtsPath);
+            console.log("✅ All debts fully repaid — removed debts.json");
+        } else {
+            fs.writeFileSync(debtsPath, safeStringify(debts), { encoding: "utf-8" });
+            console.log(`💾 Updated debts.json — ${remainingDebtors} users still indebted`);
+        }
+    }
 
     console.log("🌳 Generating merkle tree...");
     const merkleData = generateMerkleTree(distributionCombined);
