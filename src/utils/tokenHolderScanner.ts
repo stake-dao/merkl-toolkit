@@ -184,7 +184,7 @@ export class TokenHolderScanner {
 
                 for (let j = 0; j < batch.length; j++) {
                     const result = results[j];
-                    if (result.status === 'failure') {
+                    if (result.status !== 'success') {
                         throw new Error("getBalancesAtBlock, faillure rpc request");
                     }
 
