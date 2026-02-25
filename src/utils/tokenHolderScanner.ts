@@ -7,6 +7,7 @@ const erc20Abi = parseAbi([
     'function decimals() view returns (uint8)',
     'function symbol() view returns (string)',
     'function name() view returns (string)',
+    'function totalSupply() view returns (uint256)',
 ]);
 
 export class TokenHolderScanner {
@@ -144,7 +145,7 @@ export class TokenHolderScanner {
             await fetchLogsRange(start, end);
         }
 
-        console.log(`✅ ${uniqueAddresses.size} unique addresses found`);
+        console.log(`✅ ${uniqueAddresses.size} new unique addresses found`);
 
         return Array.from(uniqueAddresses);
     }
@@ -156,12 +157,13 @@ export class TokenHolderScanner {
         addresses: Address[],
         blockNumber: bigint
     ): Promise<Map<Address, bigint>> {
-        console.log(`💰 Fetching balances at block ${blockNumber}...`);
 
         const holders = new Map<Address, bigint>();
         const zeroAddress = '0x0000000000000000000000000000000000000000' as Address;
 
         const validAddresses = addresses.filter(addr => addr !== zeroAddress);
+
+        console.log(`💰 Fetching balances at block ${blockNumber} for ${validAddresses.length} holders...`);
 
         const batchSize = 100;
         for (let i = 0; i < validAddresses.length; i += batchSize) {
@@ -221,5 +223,15 @@ export class TokenHolderScanner {
         }
 
         return holders;
+    }
+
+    public async getTotalSupply(vault: Address, blockNumber: bigint): Promise<bigint> {
+        return await this.client.readContract({
+            address: vault,
+            abi: erc20Abi,
+            functionName: 'totalSupply',
+            args: [],
+            blockNumber,
+        });
     }
 }

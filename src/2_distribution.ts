@@ -1,5 +1,5 @@
 import { mainnet } from "viem/chains";
-import { Address, isAddress } from "viem";
+import { Address, formatUnits, isAddress } from "viem";
 
 import { getIncentives, writeIncentives } from "./utils/incentives";
 import { getClient } from "./utils/rpc";
@@ -123,6 +123,13 @@ const buildSnapshots = async (
     const holdersInfo = await getTokenHolders(vault, Number(endBlock));
     const scanner = new TokenHolderScanner(mainnetRpcUrl, vault);
     const initialBalances = await scanner.getBalancesAtBlock(holdersInfo.users, snapshotBlock);
+    const totalSupply = await scanner.getTotalSupply(vault, snapshotBlock);
+
+    const sumBalances = [...initialBalances.values()].reduce((acc: bigint, val: bigint) => acc + val, BigInt(0));
+    if (sumBalances < totalSupply) {
+        console.error(`Sum of balance (${formatUnits(sumBalances, 18)}) != total supply (${formatUnits(totalSupply, 18)}) for vault ${vault} at block ${snapshotBlock}`);
+        process.exit(1);
+    }
 
     const logs = await fetchTransferLogs(client, vault, startBlock, endBlock);
     const checkpoints = Array.from(
