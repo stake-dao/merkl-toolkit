@@ -49,7 +49,8 @@ export class TokenHolderScanner {
 
                 const data: any = await response.json();
 
-                if (data.status === '0' && data.message && data.message.includes('rate limit')) {
+                const msg = (data.message || '').toLowerCase();
+                if (data.status === '0' && (msg.includes('rate limit') || msg.includes('max rate') || msg === 'notok')) {
                     const retryDelay = baseDelay * Math.pow(2, attempt);
                     console.log(`⏳ Etherscan rate limit detected, retrying in ${retryDelay}ms (attempt ${attempt + 1}/${maxRetries})...`);
                     await new Promise(resolve => setTimeout(resolve, retryDelay));
@@ -114,10 +115,18 @@ export class TokenHolderScanner {
                     return;
                 }
 
-                if (data.status !== '1' || !data.result || data.result.length === 0) {
+                // No records or empty results = normal end of pagination
+                if (
+                    (data.status === '1' && (!data.result || data.result.length === 0)) ||
+                    (data.status === '0' && data.message && data.message.includes('No records found'))
+                ) {
                     hasMore = false;
-                    await new Promise(resolve => setTimeout(resolve, 250));
                     break;
+                }
+
+                // Any other non-success status = unexpected error, throw to surface it
+                if (data.status !== '1') {
+                    throw new Error(`Etherscan error for blocks ${from}-${to} page ${page}: ${data.message} (result: ${JSON.stringify(data.result)})`);
                 }
 
                 for (const log of data.result) {
@@ -136,13 +145,28 @@ export class TokenHolderScanner {
                     page++;
                 }
 
-                await new Promise(resolve => setTimeout(resolve, 250));
+                await new Promise(resolve => setTimeout(resolve, 400));
             }
         };
 
         for (let start = fromBlock; start <= toBlock; start += step) {
             const end = start + step - BigInt(1) > toBlock ? toBlock : start + step - BigInt(1);
-            await fetchLogsRange(start, end);
+
+            let attempts = 0;
+            const maxAttempts = 3;
+            while (attempts < maxAttempts) {
+                try {
+                    await fetchLogsRange(start, end);
+                    break;
+                } catch (error) {
+                    attempts++;
+                    if (attempts >= maxAttempts) {
+                        throw new Error(`Failed to fetch logs for blocks ${start}-${end} after ${maxAttempts} attempts: ${error}`);
+                    }
+                    console.log(`⚠️ Error fetching blocks ${start}-${end}, retrying (${attempts}/${maxAttempts})... ${error}`);
+                    await new Promise(resolve => setTimeout(resolve, 2000 * attempts));
+                }
+            }
         }
 
         console.log(`✅ ${uniqueAddresses.size} new unique addresses found`);
