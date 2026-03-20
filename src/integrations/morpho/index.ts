@@ -1,13 +1,43 @@
 import { Address, getAddress } from "viem";
-import axios from "axios";
+import fs from "fs";
+import path from "path";
 
 import { WrapperIntegration, WrapperContext } from "../types";
 import { TransferLog, DEFAULT_LOG_CHUNK_SIZE } from "../../utils/chain";
+import { safeParse, safeStringify } from "../../utils/parse";
 import { morphoAbi, supplyCollateralEvent, withdrawCollateralEvent, liquidateEvent } from "./abi";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 const MORPHO_ADDRESS = "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb" as Address;
-const LENDING_API = "https://api-lending.stakedao.org/v1/graphql";
+
+/**
+ * Cached depositor set per marketId.
+ * Same pattern as data/holders/{vault}/index.json.
+ */
+interface DepositorCache {
+    blockNumber: number;
+    users: Address[];
+}
+
+const getCacheDir = (marketId: string): string =>
+    path.resolve(__dirname, `../../../data/holders/morpho/${marketId}`);
+
+const getCachePath = (marketId: string): string =>
+    path.resolve(getCacheDir(marketId), "index.json");
+
+const readDepositorCache = (marketId: string): DepositorCache => {
+    const dir = getCacheDir(marketId);
+    if (!fs.existsSync(dir)) return { blockNumber: 0, users: [] };
+    const filePath = getCachePath(marketId);
+    if (!fs.existsSync(filePath)) return { blockNumber: 0, users: [] };
+    return safeParse(fs.readFileSync(filePath, { encoding: "utf-8" })) as DepositorCache;
+};
+
+const writeDepositorCache = (marketId: string, data: DepositorCache): void => {
+    const dir = getCacheDir(marketId);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(getCachePath(marketId), safeStringify(data), { encoding: "utf-8" });
+};
 
 export interface MorphoWrapperContext extends WrapperContext {
     marketId: `0x${string}`;
@@ -19,64 +49,61 @@ export interface MorphoWrapperContext extends WrapperContext {
  * MorphoStrategyWrapper contracts are used as collateral in Morpho markets.
  * This integration drills down into Morpho positions so each depositor
  * earns rewards proportional to their collateral TWAB.
+ *
+ * Depositor discovery is done exclusively via on-chain events (SupplyCollateral,
+ * WithdrawCollateral, Liquidate). Results are cached incrementally in
+ * data/holders/morpho/{marketId}/index.json to avoid rescanning from genesis.
  */
 export class MorphoIntegration implements WrapperIntegration {
     readonly name = "morpho-lending";
     private client: any;
-    private wrappersCache: Map<Address, WrapperContext> | null = null;
+    private wrapperEntries: Map<Address, WrapperContext>;
 
-    constructor(client: any) {
+    /**
+     * @param client - viem public client
+     * @param wrapperEntries - map of wrapper address → MorphoWrapperContext.
+     *   Must be provided at construction — these are the known Morpho markets.
+     */
+    constructor(client: any, wrapperEntries: Map<Address, MorphoWrapperContext>) {
         this.client = client;
+        this.wrapperEntries = wrapperEntries;
     }
 
     async getWrappers(): Promise<Map<Address, WrapperContext>> {
-        if (this.wrappersCache) return this.wrappersCache;
-
-        const { data } = await axios.post(LENDING_API, {
-            query: `{ Market { collateralToken marketId } }`,
-        });
-
-        const map = new Map<Address, WrapperContext>();
-        for (const market of data.data.Market) {
-            const wrapper = getAddress(market.collateralToken) as Address;
-            map.set(wrapper, {
-                wrapper,
-                marketId: market.marketId as `0x${string}`,
-            });
-        }
-
-        this.wrappersCache = map;
-        return map;
+        return this.wrapperEntries;
     }
 
+    /**
+     * Discover all depositors that ever interacted with this market,
+     * using incremental on-chain event scanning with persistent cache.
+     */
     async getDepositors(
         ctx: WrapperContext,
         _fromBlock: bigint,
-        _toBlock: bigint,
+        toBlock: bigint,
     ): Promise<Address[]> {
         const { marketId } = ctx as MorphoWrapperContext;
 
-        // Current depositors from the lending API
-        const { data } = await axios.post(LENDING_API, {
-            query: `query ($id: String!) {
-                Position(where: { marketId: { _eq: $id }, collateral: { _gt: "0" } }) {
-                    user
-                }
-            }`,
-            variables: { id: marketId },
-        });
+        const cache = readDepositorCache(marketId);
+        const scanFrom = cache.blockNumber > 0 ? BigInt(cache.blockNumber) + 1n : 0n;
 
-        const apiUsers = new Set<Address>(
-            data.data.Position.map((p: { user: string }) => getAddress(p.user) as Address),
-        );
-
-        // Supplement with historical depositors from on-chain events
-        const eventUsers = await this.discoverUsersFromEvents(marketId, _fromBlock, _toBlock);
-        for (const addr of eventUsers) {
-            apiUsers.add(addr);
+        if (scanFrom > toBlock) {
+            return cache.users;
         }
 
-        return Array.from(apiUsers);
+        console.log(`    📡 Scanning Morpho events for market ${marketId} from block ${scanFrom} to ${toBlock}`);
+
+        const newUsers = await this.scanUsersFromEvents(marketId, scanFrom, toBlock);
+        const allUsers = Array.from(new Set([...cache.users, ...newUsers]))
+            .filter((u) => u.toLowerCase() !== ZERO_ADDRESS.toLowerCase());
+
+        writeDepositorCache(marketId, {
+            blockNumber: Number(toBlock),
+            users: allUsers,
+        });
+
+        console.log(`    ✅ ${allUsers.length} total depositors (${newUsers.length} new)`);
+        return allUsers;
     }
 
     async getBalancesAtBlock(
@@ -120,7 +147,6 @@ export class MorphoIntegration implements WrapperIntegration {
     ): Promise<TransferLog[]> {
         const { marketId } = ctx as MorphoWrapperContext;
         const logs: TransferLog[] = [];
-
         const chunkSize = DEFAULT_LOG_CHUNK_SIZE;
 
         for (let start = fromBlock; start <= toBlock; start += chunkSize) {
@@ -191,10 +217,10 @@ export class MorphoIntegration implements WrapperIntegration {
     }
 
     /**
-     * Scan Morpho events to discover addresses that interacted during the window.
-     * Catches depositors who withdrew before the current API snapshot.
+     * Scan Morpho events to discover all addresses that ever interacted
+     * with this market in the given block range.
      */
-    private async discoverUsersFromEvents(
+    private async scanUsersFromEvents(
         marketId: `0x${string}`,
         fromBlock: bigint,
         toBlock: bigint,
