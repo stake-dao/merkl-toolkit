@@ -5,13 +5,13 @@ import path from "path";
 import { WrapperIntegration, WrapperContext } from "../types";
 import { TransferLog, DEFAULT_LOG_CHUNK_SIZE } from "../../utils/chain";
 import { safeParse, safeStringify } from "../../utils/parse";
-import { morphoAbi, supplyCollateralEvent, withdrawCollateralEvent, liquidateEvent } from "./abi";
+import { morphoAbi, depositedEvent, withdrawnEvent, liquidatedEvent } from "./abi";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 const MORPHO_ADDRESS = "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb" as Address;
 
 /**
- * Cached depositor set per marketId.
+ * Cached depositor set per wrapper address.
  * Same pattern as data/holders/{vault}/index.json.
  */
 interface DepositorCache {
@@ -19,24 +19,24 @@ interface DepositorCache {
     users: Address[];
 }
 
-const getCacheDir = (marketId: string): string =>
-    path.resolve(__dirname, `../../../data/holders/morpho/${marketId}`);
+const getCacheDir = (wrapper: string): string =>
+    path.resolve(__dirname, `../../../data/holders/morpho/${wrapper}`);
 
-const getCachePath = (marketId: string): string =>
-    path.resolve(getCacheDir(marketId), "index.json");
+const getCachePath = (wrapper: string): string =>
+    path.resolve(getCacheDir(wrapper), "index.json");
 
-const readDepositorCache = (marketId: string): DepositorCache => {
-    const dir = getCacheDir(marketId);
+const readDepositorCache = (wrapper: string): DepositorCache => {
+    const dir = getCacheDir(wrapper);
     if (!fs.existsSync(dir)) return { blockNumber: 0, users: [] };
-    const filePath = getCachePath(marketId);
+    const filePath = getCachePath(wrapper);
     if (!fs.existsSync(filePath)) return { blockNumber: 0, users: [] };
     return safeParse(fs.readFileSync(filePath, { encoding: "utf-8" })) as DepositorCache;
 };
 
-const writeDepositorCache = (marketId: string, data: DepositorCache): void => {
-    const dir = getCacheDir(marketId);
+const writeDepositorCache = (wrapper: string, data: DepositorCache): void => {
+    const dir = getCacheDir(wrapper);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(getCachePath(marketId), safeStringify(data), { encoding: "utf-8" });
+    fs.writeFileSync(getCachePath(wrapper), safeStringify(data), { encoding: "utf-8" });
 };
 
 export interface MorphoWrapperContext extends WrapperContext {
@@ -47,23 +47,22 @@ export interface MorphoWrapperContext extends WrapperContext {
  * Morpho lending integration.
  *
  * MorphoStrategyWrapper contracts are used as collateral in Morpho markets.
- * This integration drills down into Morpho positions so each depositor
+ * This integration drills down into wrapper positions so each depositor
  * earns rewards proportional to their collateral TWAB.
  *
- * Depositor discovery is done exclusively via on-chain events (SupplyCollateral,
- * WithdrawCollateral, Liquidate). Results are cached incrementally in
- * data/holders/morpho/{marketId}/index.json to avoid rescanning from genesis.
+ * Uses the wrapper's own events (Deposited, Withdrawn, Liquidated) as the
+ * single source of truth. This mirrors the wrapper's internal accounting —
+ * a liquidated user keeps earning until claimLiquidation is called, which
+ * is consistent with how the wrapper distributes main + extra rewards.
+ *
+ * Depositor discovery is cached incrementally in
+ * data/holders/morpho/{wrapper}/index.json to avoid rescanning from genesis.
  */
 export class MorphoIntegration implements WrapperIntegration {
     readonly name = "morpho-lending";
     private client: any;
     private wrapperEntries: Map<Address, WrapperContext>;
 
-    /**
-     * @param client - viem public client
-     * @param wrapperEntries - map of wrapper address → MorphoWrapperContext.
-     *   Must be provided at construction — these are the known Morpho markets.
-     */
     constructor(client: any, wrapperEntries: Map<Address, MorphoWrapperContext>) {
         this.client = client;
         this.wrapperEntries = wrapperEntries;
@@ -74,7 +73,7 @@ export class MorphoIntegration implements WrapperIntegration {
     }
 
     /**
-     * Discover all depositors that ever interacted with this market,
+     * Discover all depositors that ever interacted with this wrapper,
      * using incremental on-chain event scanning with persistent cache.
      */
     async getDepositors(
@@ -82,22 +81,22 @@ export class MorphoIntegration implements WrapperIntegration {
         _fromBlock: bigint,
         toBlock: bigint,
     ): Promise<Address[]> {
-        const { marketId } = ctx as MorphoWrapperContext;
+        const wrapper = ctx.wrapper;
 
-        const cache = readDepositorCache(marketId);
+        const cache = readDepositorCache(wrapper);
         const scanFrom = cache.blockNumber > 0 ? BigInt(cache.blockNumber) + 1n : 0n;
 
         if (scanFrom > toBlock) {
             return cache.users;
         }
 
-        console.log(`    📡 Scanning Morpho events for market ${marketId} from block ${scanFrom} to ${toBlock}`);
+        console.log(`    📡 Scanning wrapper events for ${wrapper} from block ${scanFrom} to ${toBlock}`);
 
-        const newUsers = await this.scanUsersFromEvents(marketId, scanFrom, toBlock);
+        const newUsers = await this.scanUsersFromEvents(wrapper, scanFrom, toBlock);
         const allUsers = Array.from(new Set([...cache.users, ...newUsers]))
             .filter((u) => u.toLowerCase() !== ZERO_ADDRESS.toLowerCase());
 
-        writeDepositorCache(marketId, {
+        writeDepositorCache(wrapper, {
             blockNumber: Number(toBlock),
             users: allUsers,
         });
@@ -106,6 +105,9 @@ export class MorphoIntegration implements WrapperIntegration {
         return allUsers;
     }
 
+    /**
+     * Fetch each depositor's collateral balance at `blockNumber` via Morpho's position view.
+     */
     async getBalancesAtBlock(
         ctx: WrapperContext,
         users: Address[],
@@ -140,41 +142,48 @@ export class MorphoIntegration implements WrapperIntegration {
         return balances;
     }
 
+    /**
+     * Fetch wrapper events (Deposited, Withdrawn, Liquidated) and convert
+     * to synthetic TransferLog entries.
+     *
+     * Mapping:
+     *   Deposited(caller, receiver, amount, marketId) → { from: 0x0, to: receiver, value: amount }
+     *   Withdrawn(user, amount)                       → { from: user, to: 0x0, value: amount }
+     *   Liquidated(liquidator, victim, amount)         → { from: victim, to: 0x0, value: amount }
+     */
     async getTransferLogs(
         ctx: WrapperContext,
         fromBlock: bigint,
         toBlock: bigint,
     ): Promise<TransferLog[]> {
-        const { marketId } = ctx as MorphoWrapperContext;
+        const wrapper = ctx.wrapper;
         const logs: TransferLog[] = [];
         const chunkSize = DEFAULT_LOG_CHUNK_SIZE;
 
         for (let start = fromBlock; start <= toBlock; start += chunkSize) {
             const end = start + chunkSize - 1n > toBlock ? toBlock : start + chunkSize - 1n;
 
-            // SupplyCollateral — mint-like: 0x0 → onBehalf
-            const supplyLogs = await this.client.getLogs({
-                address: MORPHO_ADDRESS,
-                event: supplyCollateralEvent,
-                args: { id: marketId },
+            // Deposited — mint-like: 0x0 → receiver
+            const depositLogs = await this.client.getLogs({
+                address: wrapper,
+                event: depositedEvent,
                 fromBlock: start,
                 toBlock: end,
             });
-            for (const log of supplyLogs) {
+            for (const log of depositLogs) {
                 logs.push({
                     blockNumber: log.blockNumber!,
                     logIndex: Number(log.logIndex ?? 0),
                     from: ZERO_ADDRESS,
-                    to: log.args.onBehalf as Address,
-                    value: BigInt(log.args.assets!),
+                    to: log.args.receiver as Address,
+                    value: BigInt(log.args.amount!),
                 });
             }
 
-            // WithdrawCollateral — burn-like: onBehalf → 0x0
+            // Withdrawn — burn-like: user → 0x0
             const withdrawLogs = await this.client.getLogs({
-                address: MORPHO_ADDRESS,
-                event: withdrawCollateralEvent,
-                args: { id: marketId },
+                address: wrapper,
+                event: withdrawnEvent,
                 fromBlock: start,
                 toBlock: end,
             });
@@ -182,27 +191,28 @@ export class MorphoIntegration implements WrapperIntegration {
                 logs.push({
                     blockNumber: log.blockNumber!,
                     logIndex: Number(log.logIndex ?? 0),
-                    from: log.args.onBehalf as Address,
+                    from: log.args.user as Address,
                     to: ZERO_ADDRESS,
-                    value: BigInt(log.args.assets!),
+                    value: BigInt(log.args.amount!),
                 });
             }
 
-            // Liquidate — burn-like: borrower → 0x0 (seizedAssets)
-            const liquidateLogs = await this.client.getLogs({
-                address: MORPHO_ADDRESS,
-                event: liquidateEvent,
-                args: { id: marketId },
+            // Liquidated — burn-like: victim → 0x0
+            // Fires when claimLiquidation is called, matching the wrapper's
+            // internal accounting (victim earns until claim).
+            const liquidationLogs = await this.client.getLogs({
+                address: wrapper,
+                event: liquidatedEvent,
                 fromBlock: start,
                 toBlock: end,
             });
-            for (const log of liquidateLogs) {
+            for (const log of liquidationLogs) {
                 logs.push({
                     blockNumber: log.blockNumber!,
                     logIndex: Number(log.logIndex ?? 0),
-                    from: log.args.borrower as Address,
+                    from: log.args.victim as Address,
                     to: ZERO_ADDRESS,
-                    value: BigInt(log.args.seizedAssets!),
+                    value: BigInt(log.args.amount!),
                 });
             }
         }
@@ -217,11 +227,11 @@ export class MorphoIntegration implements WrapperIntegration {
     }
 
     /**
-     * Scan Morpho events to discover all addresses that ever interacted
-     * with this market in the given block range.
+     * Scan wrapper events to discover all addresses that ever deposited,
+     * withdrew, or were liquidated in the given block range.
      */
     private async scanUsersFromEvents(
-        marketId: `0x${string}`,
+        wrapper: Address,
         fromBlock: bigint,
         toBlock: bigint,
     ): Promise<Address[]> {
@@ -231,33 +241,33 @@ export class MorphoIntegration implements WrapperIntegration {
         for (let start = fromBlock; start <= toBlock; start += chunkSize) {
             const end = start + chunkSize - 1n > toBlock ? toBlock : start + chunkSize - 1n;
 
-            const [supplies, withdrawals, liquidations] = await Promise.all([
+            const [deposits, withdrawals, liquidations] = await Promise.all([
                 this.client.getLogs({
-                    address: MORPHO_ADDRESS,
-                    event: supplyCollateralEvent,
-                    args: { id: marketId },
+                    address: wrapper,
+                    event: depositedEvent,
                     fromBlock: start,
                     toBlock: end,
                 }),
                 this.client.getLogs({
-                    address: MORPHO_ADDRESS,
-                    event: withdrawCollateralEvent,
-                    args: { id: marketId },
+                    address: wrapper,
+                    event: withdrawnEvent,
                     fromBlock: start,
                     toBlock: end,
                 }),
                 this.client.getLogs({
-                    address: MORPHO_ADDRESS,
-                    event: liquidateEvent,
-                    args: { id: marketId },
+                    address: wrapper,
+                    event: liquidatedEvent,
                     fromBlock: start,
                     toBlock: end,
                 }),
             ]);
 
-            for (const log of supplies) users.add(getAddress(log.args.onBehalf) as Address);
-            for (const log of withdrawals) users.add(getAddress(log.args.onBehalf) as Address);
-            for (const log of liquidations) users.add(getAddress(log.args.borrower) as Address);
+            for (const log of deposits) users.add(getAddress(log.args.receiver) as Address);
+            for (const log of withdrawals) users.add(getAddress(log.args.user) as Address);
+            for (const log of liquidations) {
+                users.add(getAddress(log.args.liquidator) as Address);
+                users.add(getAddress(log.args.victim) as Address);
+            }
         }
 
         return Array.from(users);
