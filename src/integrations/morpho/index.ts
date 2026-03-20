@@ -1,4 +1,5 @@
 import { Address, getAddress } from "viem";
+import axios from "axios";
 import fs from "fs";
 import path from "path";
 
@@ -9,6 +10,7 @@ import { morphoAbi, depositedEvent, withdrawnEvent, liquidatedEvent } from "./ab
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 const MORPHO_ADDRESS = "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb" as Address;
+const LENDING_API = "https://api-lending.stakedao.org/v1/graphql";
 
 /**
  * Cached depositor set per wrapper address.
@@ -61,15 +63,34 @@ export interface MorphoWrapperContext extends WrapperContext {
 export class MorphoIntegration implements WrapperIntegration {
     readonly name = "morpho-lending";
     private client: any;
-    private wrapperEntries: Map<Address, WrapperContext>;
+    private wrappersCache: Map<Address, WrapperContext> | null = null;
 
-    constructor(client: any, wrapperEntries: Map<Address, MorphoWrapperContext>) {
+    constructor(client: any) {
         this.client = client;
-        this.wrapperEntries = wrapperEntries;
     }
 
+    /**
+     * Fetch the list of Morpho markets from the lending API.
+     * This is structural data (which wrappers exist) — not position data.
+     */
     async getWrappers(): Promise<Map<Address, WrapperContext>> {
-        return this.wrapperEntries;
+        if (this.wrappersCache) return this.wrappersCache;
+
+        const { data } = await axios.post(LENDING_API, {
+            query: `{ Market { collateralToken marketId } }`,
+        });
+
+        const map = new Map<Address, WrapperContext>();
+        for (const market of data.data.Market) {
+            const wrapper = getAddress(market.collateralToken) as Address;
+            map.set(wrapper, {
+                wrapper,
+                marketId: market.marketId as `0x${string}`,
+            });
+        }
+
+        this.wrappersCache = map;
+        return map;
     }
 
     /**

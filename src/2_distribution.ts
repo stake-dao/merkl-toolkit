@@ -12,7 +12,6 @@ import { Distribution, IncentiveDistribution } from "./interfaces/Distribution";
 import { registry } from "./integrations/registry";
 import { MorphoIntegration } from "./integrations/morpho";
 import { expandWrapperAllocations } from "./integrations/expand";
-import { MORPHO_MARKETS } from "./integrations/morpho/markets";
 /**
  * Distribution
  *
@@ -222,7 +221,7 @@ export const distribute = async () => {
     const currentTimestamp = Number(currentBlock.timestamp);
 
     // Register wrapper integrations — add new ones here
-    registry.register(new MorphoIntegration(client, MORPHO_MARKETS));
+    registry.register(new MorphoIntegration(client));
 
     const incentives = await getIncentives();
     const lastDistributions = getLastDistributionsData();
