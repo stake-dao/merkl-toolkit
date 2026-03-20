@@ -9,6 +9,9 @@ import { rmAndCreateDistributionDir, writeDistribution, writeDistributionGaugeDa
 import { getLastDistributionsData, writeLastDistributionData } from "./utils/distributionData";
 
 import { Distribution, IncentiveDistribution } from "./interfaces/Distribution";
+import { registry } from "./integrations/registry";
+import { MorphoIntegration } from "./integrations/morpho";
+import { expandWrapperAllocations } from "./integrations/expand";
 /**
  * Distribution
  *
@@ -217,6 +220,9 @@ export const distribute = async () => {
     const currentBlock = await client.getBlock();
     const currentTimestamp = Number(currentBlock.timestamp);
 
+    // Register wrapper integrations — add new ones here
+    registry.register(new MorphoIntegration(client));
+
     const incentives = await getIncentives();
     const lastDistributions = getLastDistributionsData();
     const lastDistributionTimestamp =
@@ -244,6 +250,12 @@ export const distribute = async () => {
     }
 
     rmAndCreateDistributionDir(currentTimestamp);
+
+    // 1b. Build wrapper map from all registered integrations
+    const wrapperMap = await registry.buildWrapperMap();
+    if (wrapperMap.size > 0) {
+        console.log(`🔌 ${wrapperMap.size} wrapper(s) registered from integrations`);
+    }
 
     // 2. For each vault replay historical transfers and collect TWAB weights.
     const blockTimestampCache = new Map<string, number>();
@@ -305,7 +317,27 @@ export const distribute = async () => {
         writeDistributionGaugeData(currentTimestamp, gaugeSnapshot);
     }
 
-    // 3. Persist the distribution artifact for the Merkle step.
+    // 3. Expand wrapper allocations — drill into depositors via sub-TWAB
+    if (wrapperMap.size > 0) {
+        for (const dist of allIncentiveDistributions) {
+            const window = windowsByVault.get(dist.vault)?.find(
+                (w) => w.incentive.id === dist.distribution.incentiveId,
+            );
+            if (!window) continue;
+
+            dist.users = await expandWrapperAllocations(
+                client,
+                dist.users,
+                wrapperMap,
+                window.startTimestamp,
+                window.endTimestamp,
+                currentBlockNumber,
+                blockTimestampCache,
+            );
+        }
+    }
+
+    // 4. Persist the distribution artifact for the Merkle step.
     const distribution: Distribution = {
         blockNumber: Number(currentBlock.number),
         timestamp: currentTimestamp,
