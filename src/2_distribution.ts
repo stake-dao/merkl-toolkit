@@ -325,15 +325,20 @@ export const distribute = async () => {
             );
             if (!window) continue;
 
-            dist.users = await expandWrapperAllocations(
-                client,
-                dist.users,
-                wrapperMap,
-                window.startTimestamp,
-                window.endTimestamp,
-                currentBlockNumber,
-                blockTimestampCache,
-            );
+            try {
+                dist.users = await expandWrapperAllocations(
+                    client,
+                    dist.users,
+                    wrapperMap,
+                    window.startTimestamp,
+                    window.endTimestamp,
+                    currentBlockNumber,
+                    blockTimestampCache,
+                );
+            } catch (error) {
+                console.error(`❌ Wrapper expansion failed for vault ${dist.vault}, incentive ${dist.distribution.incentiveId}: ${error}`);
+                process.exit(1);
+            }
         }
     }
 

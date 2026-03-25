@@ -50,6 +50,15 @@ export interface WrapperIntegration {
         fromBlock: bigint,
         toBlock: bigint,
     ): Promise<TransferLog[]>;
+
+    /**
+     * Return the expected total of all depositor balances at `blockNumber`.
+     * Used to verify that all depositors were discovered.
+     */
+    getTotalSupply(
+        ctx: WrapperContext,
+        blockNumber: bigint,
+    ): Promise<bigint>;
 }
 
 /**

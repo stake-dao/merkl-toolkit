@@ -6,7 +6,7 @@ import path from "path";
 import { WrapperIntegration, WrapperContext } from "../types";
 import { TransferLog, DEFAULT_LOG_CHUNK_SIZE } from "../../utils/chain";
 import { safeParse, safeStringify } from "../../utils/parse";
-import { morphoAbi, depositedEvent, withdrawnEvent, liquidatedEvent } from "./abi";
+import { morphoAbi, erc20Abi, depositedEvent, withdrawnEvent, liquidatedEvent } from "./abi";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 const MORPHO_ADDRESS = "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb" as Address;
@@ -76,9 +76,16 @@ export class MorphoIntegration implements WrapperIntegration {
     async getWrappers(): Promise<Map<Address, WrapperContext>> {
         if (this.wrappersCache) return this.wrappersCache;
 
-        const { data } = await axios.post(LENDING_API, {
-            query: `{ Market { collateralToken marketId } }`,
-        });
+        let data: any;
+        try {
+            const response = await axios.post(LENDING_API, {
+                query: `{ Market { collateralToken marketId } }`,
+            });
+            data = response.data;
+        } catch (error) {
+            console.error(`❌ Failed to fetch Morpho markets from lending API: ${error}`);
+            process.exit(1);
+        }
 
         const map = new Map<Address, WrapperContext>();
         for (const market of data.data.Market) {
@@ -156,11 +163,30 @@ export class MorphoIntegration implements WrapperIntegration {
                     if (collateral > 0n) {
                         balances.set(batch[j], collateral);
                     }
+                } else {
+                    console.error(`❌ Multicall position() failed for user ${batch[j]} in wrapper ${ctx.wrapper}`);
+                    process.exit(1);
                 }
             }
         }
 
         return balances;
+    }
+
+    /**
+     * Total wrapper tokens held as collateral in Morpho at `blockNumber`.
+     */
+    async getTotalSupply(
+        ctx: WrapperContext,
+        blockNumber: bigint,
+    ): Promise<bigint> {
+        return await this.client.readContract({
+            address: ctx.wrapper,
+            abi: erc20Abi,
+            functionName: "balanceOf",
+            args: [MORPHO_ADDRESS],
+            blockNumber,
+        });
     }
 
     /**

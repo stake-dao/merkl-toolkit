@@ -16,3 +16,7 @@ export const withdrawnEvent = parseAbiItem(
 export const liquidatedEvent = parseAbiItem(
     "event Liquidated(address indexed liquidator, address indexed victim, uint256 amount)",
 );
+
+export const erc20Abi = parseAbi([
+    "function balanceOf(address) view returns (uint256)",
+]);

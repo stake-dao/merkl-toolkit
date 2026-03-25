@@ -64,6 +64,14 @@ export async function expandWrapperAllocations(
 
         // Get initial balances and transfer logs from the integration
         const initialBalances = await integration.getBalancesAtBlock(context, depositors, snapshotBlock);
+
+        const totalSupply = await integration.getTotalSupply(context, snapshotBlock);
+        const sumBalances = [...initialBalances.values()].reduce((a, b) => a + b, 0n);
+        if (sumBalances < totalSupply) {
+            console.error(`Sum of balances (${sumBalances}) < totalSupply (${totalSupply}) for wrapper ${userDist.user} at block ${snapshotBlock}`);
+            process.exit(1);
+        }
+
         const transferLogs = await integration.getTransferLogs(context, startBlock, endBlock);
 
         const globalStart = BigInt(startTimestamp);
