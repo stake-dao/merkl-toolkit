@@ -30,4 +30,5 @@ export interface UserDistribution {
     balance: string;
     share: string;
     amount: string;
+    source?: "direct" | "morpho";
 }

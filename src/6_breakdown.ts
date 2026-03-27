@@ -5,8 +5,8 @@ import { mainnet } from "viem/chains";
 import { getClient } from "./utils/rpc";
 import { getDistribution } from "./utils/distribution";
 import { getLastDistributionsData } from "./utils/distributionData";
-import { getBreakdownFile, writeBreakdownFile, emptyBreakdownFile } from "./utils/breakdown";
-import { Breakdown, VaultTokenBreakdown, BreakdownFile, SerializedEarnedEntry, SerializedClaimEvent } from "./interfaces/Breakdown";
+import { readMeta, writeMeta, emptyMeta, readEarnedEntries, writeEarnedEntries, readClaimEvents, writeClaimEvents, writeBreakdown } from "./utils/breakdown";
+import { Breakdown, VaultTokenBreakdown, ProductType, EarnedSource, SerializedEarnedEntry, SerializedClaimEvent } from "./interfaces/Breakdown";
 import { MERKL_CONTRACT } from "./constants";
 import { merklAbi } from "./abis/Merkl";
 import { MerkleData } from "./interfaces/MerkleData";
@@ -27,6 +27,7 @@ interface EarnedEntry {
     timestamp: number;
     vault: Address;
     amount: bigint;
+    source: EarnedSource;
 }
 
 interface ClaimEvent {
@@ -78,6 +79,24 @@ const fetchWithRetry = async (url: string, maxRetries = 50, baseDelay = 1000): P
 
 // ── Phase 1: Accumulate earned entries (incremental) ─────────────────
 
+// Load all known Morpho depositor addresses from caches on disk.
+// Used as fallback for old distribution files that don't have the source field.
+const loadMorphoDepositors = (): Set<string> => {
+    const morphoDir = path.resolve(DATA_DIR, "holders/morpho");
+    if (!fs.existsSync(morphoDir)) return new Set();
+
+    const depositors = new Set<string>();
+    for (const wrapper of fs.readdirSync(morphoDir)) {
+        const indexPath = path.resolve(morphoDir, wrapper, "index.json");
+        if (!fs.existsSync(indexPath)) continue;
+        const data = safeParse(fs.readFileSync(indexPath, { encoding: "utf-8" }));
+        for (const user of data.users ?? []) {
+            depositors.add(getAddress(user).toLowerCase());
+        }
+    }
+    return depositors;
+};
+
 const accumulateNewDistributions = (
     existingEntries: Record<string, SerializedEarnedEntry[]>,
     lastProcessedTimestamp: number,
@@ -89,6 +108,12 @@ const accumulateNewDistributions = (
 
     if (toProcess.length === 0) {
         return { entries: existingEntries, newTimestamp: lastProcessedTimestamp, count: 0 };
+    }
+
+    // Load Morpho depositor set for old files without source field
+    const morphoDepositors = loadMorphoDepositors();
+    if (morphoDepositors.size > 0) {
+        console.log(`🔌 Loaded ${morphoDepositors.size} known Morpho depositor(s) from cache`);
     }
 
     console.log(`📝 Processing ${toProcess.length} new distribution(s)...`);
@@ -104,10 +129,23 @@ const accumulateNewDistributions = (
                 const addr = getAddress(user.user);
                 const key = `${addr}-${token}`;
                 if (!entries[key]) entries[key] = [];
+
+                // Determine source: explicit field (new files) or heuristic (old files)
+                let source: EarnedSource;
+                if (user.source) {
+                    source = user.source;
+                } else {
+                    // Old file: balance == 0 + in Morpho cache → morpho
+                    const isZeroBalance = BigInt(user.balance) === 0n;
+                    const isMorphoDepositor = morphoDepositors.has(addr.toLowerCase());
+                    source = isZeroBalance && isMorphoDepositor ? "morpho" : "direct";
+                }
+
                 entries[key].push({
                     timestamp: dist.timestamp,
                     vault,
                     amount: BigInt(user.amount),
+                    source,
                 });
             }
         }
@@ -282,6 +320,14 @@ const processUserToken = (
 
     const vaultEarned = new Map<Address, bigint>();
     const vaultClaimed = new Map<Address, bigint>();
+    const vaultSources = new Map<Address, Set<EarnedSource>>();
+
+    // Track sources per vault from earned entries
+    for (const e of earnedEntries) {
+        const sources = vaultSources.get(e.vault) ?? new Set();
+        sources.add(e.source);
+        vaultSources.set(e.vault, sources);
+    }
 
     for (const event of timeline) {
         if (event.type === "earn") {
@@ -360,10 +406,16 @@ const processUserToken = (
         }
         allocatedClaimable += claimable;
 
+        const sources = vaultSources.get(vault);
+        const productType: ProductType = sources?.has("direct") && sources?.has("morpho")
+            ? "both"
+            : sources?.has("morpho") ? "morpho" : "direct";
+
         result.set(vault, {
             earned: earned.toString(),
             claimed: claimed.toString(),
             claimable: claimable.toString(),
+            type: productType,
         });
     }
 
@@ -381,24 +433,23 @@ export const buildBreakdown = async (rebuild: boolean = false) => {
     }
 
     // Load or reset state
-    let file: BreakdownFile;
+    let meta = rebuild ? emptyMeta() : readMeta();
+    let earnedEntries = rebuild ? {} : readEarnedEntries();
+    let claimEvents = rebuild ? {} : readClaimEvents();
+
     if (rebuild) {
         console.log("🔄 Rebuilding from scratch...");
-        file = emptyBreakdownFile();
-    } else {
-        file = getBreakdownFile();
-        if (file.lastProcessedTimestamp > 0) {
-            console.log(`📂 Loaded state (last dist: ${file.lastProcessedTimestamp}, last block: ${file.lastScannedBlock})`);
-        }
+    } else if (meta.lastProcessedTimestamp > 0) {
+        console.log(`📂 Loaded state (last dist: ${meta.lastProcessedTimestamp}, last block: ${meta.lastScannedBlock})`);
     }
 
     // Phase 1: Accumulate earned entries (incremental)
     const { entries, newTimestamp, count: distCount } = accumulateNewDistributions(
-        file.earnedEntries,
-        file.lastProcessedTimestamp,
+        earnedEntries,
+        meta.lastProcessedTimestamp,
     );
-    file.earnedEntries = entries;
-    if (newTimestamp > 0) file.lastProcessedTimestamp = newTimestamp;
+    earnedEntries = entries;
+    if (newTimestamp > 0) meta.lastProcessedTimestamp = newTimestamp;
 
     if (distCount > 0) {
         console.log(`✅ ${distCount} distribution(s) processed`);
@@ -406,7 +457,7 @@ export const buildBreakdown = async (rebuild: boolean = false) => {
         console.log("✅ Earned entries up to date");
     }
 
-    const allKeys = Object.keys(file.earnedEntries);
+    const allKeys = Object.keys(earnedEntries);
     if (allKeys.length === 0) {
         console.log("⚠️ No earned entries");
         return;
@@ -416,10 +467,9 @@ export const buildBreakdown = async (rebuild: boolean = false) => {
     const client = await getClient(mainnet.id);
     const currentBlock = await client.getBlockNumber();
 
-    // Determine scan start: after last scanned block, or first distribution block
     let scanFromBlock: bigint;
-    if (file.lastScannedBlock > 0) {
-        scanFromBlock = BigInt(file.lastScannedBlock) + 1n;
+    if (meta.lastScannedBlock > 0) {
+        scanFromBlock = BigInt(meta.lastScannedBlock) + 1n;
     } else {
         const distributionsData = getLastDistributionsData();
         const sent = distributionsData.filter((d) => d.sentOnchain).sort((a, b) => a.timestamp - b.timestamp);
@@ -428,12 +478,12 @@ export const buildBreakdown = async (rebuild: boolean = false) => {
 
     console.log(`🔗 Scanning claim events (blocks ${scanFromBlock}→${currentBlock})...`);
     const { claims, newBlock, count: claimCount } = await scanNewClaimEvents(
-        file.claimEvents,
+        claimEvents,
         scanFromBlock,
         currentBlock,
     );
-    file.claimEvents = claims;
-    file.lastScannedBlock = newBlock;
+    claimEvents = claims;
+    meta.lastScannedBlock = newBlock;
 
     // Phase 3: Fetch current claimed amounts
     const pairs: { user: Address; token: Address }[] = [];
@@ -462,20 +512,20 @@ export const buildBreakdown = async (rebuild: boolean = false) => {
         }
     }
 
-    // Phase 4: Process all timelines (always recomputed from full data)
+    // Phase 4: Process all timelines
     console.log("📐 Processing timelines...");
     const breakdown: Breakdown = {};
 
     for (const key of allKeys) {
         const [user, token] = key.split("-") as [Address, Address];
 
-        // Cast serialized entries to typed entries
-        const earned: EarnedEntry[] = (file.earnedEntries[key] ?? []).map((e) => ({
+        const earned: EarnedEntry[] = (earnedEntries[key] ?? []).map((e) => ({
             timestamp: e.timestamp,
             vault: e.vault as Address,
             amount: BigInt(e.amount),
+            source: (e.source ?? "direct") as EarnedSource,
         }));
-        const claimEvts: ClaimEvent[] = (file.claimEvents[key] ?? []).map((c) => ({
+        const claimEvts: ClaimEvent[] = (claimEvents[key] ?? []).map((c) => ({
             blockNumber: BigInt(c.blockNumber),
             timestamp: c.timestamp,
             user: c.user as Address,
@@ -494,9 +544,11 @@ export const buildBreakdown = async (rebuild: boolean = false) => {
         }
     }
 
-    // Phase 5: Write
-    file.breakdown = breakdown;
-    writeBreakdownFile(file);
+    // Phase 5: Write all files separately
+    writeMeta(meta);
+    writeEarnedEntries(earnedEntries);
+    writeClaimEvents(claimEvents);
+    writeBreakdown(breakdown);
 
     const userCount = Object.keys(breakdown).length;
     console.log(`🏁 Breakdown complete (${userCount} users, ${distCount} new dists, ${claimCount} new claims)`);

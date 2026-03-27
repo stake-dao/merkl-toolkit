@@ -1,7 +1,10 @@
+export type ProductType = "direct" | "morpho" | "both";
+
 export interface VaultTokenBreakdown {
     earned: string;
     claimed: string;
     claimable: string;
+    type: ProductType;
 }
 
 export interface Breakdown {
@@ -12,10 +15,13 @@ export interface Breakdown {
     };
 }
 
+export type EarnedSource = "direct" | "morpho";
+
 export interface SerializedEarnedEntry {
     timestamp: number;
     vault: string;
     amount: bigint;
+    source: EarnedSource;
 }
 
 export interface SerializedClaimEvent {
@@ -25,10 +31,7 @@ export interface SerializedClaimEvent {
     amount: bigint;
 }
 
-export interface BreakdownFile {
+export interface BreakdownMeta {
     lastProcessedTimestamp: number;
     lastScannedBlock: number;
-    earnedEntries: Record<string, SerializedEarnedEntry[]>;
-    claimEvents: Record<string, SerializedClaimEvent[]>;
-    breakdown: Breakdown;
 }

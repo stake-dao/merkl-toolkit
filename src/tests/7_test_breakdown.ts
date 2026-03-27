@@ -16,7 +16,7 @@ import { MERKL_CONTRACT } from "../constants";
 import { merklAbi } from "../abis/Merkl";
 import { safeParse } from "../utils/parse";
 import { MerkleData } from "../interfaces/MerkleData";
-import { BreakdownFile } from "../interfaces/Breakdown";
+import { Breakdown } from "../interfaces/Breakdown";
 import * as dotenv from "dotenv";
 
 dotenv.config();
@@ -35,10 +35,9 @@ export const testBreakdown = async () => {
     console.log("🧪 Starting breakdown validation...\n");
 
     // 1. Load breakdown and merkle
-    const breakdownFile = safeParse(
-        fs.readFileSync(path.resolve(DATA_DIR, "last_breakdown.json"), { encoding: "utf-8" }),
-    ) as BreakdownFile;
-    const breakdown = breakdownFile.breakdown;
+    const breakdown = safeParse(
+        fs.readFileSync(path.resolve(DATA_DIR, "breakdown", "breakdown.json"), { encoding: "utf-8" }),
+    ) as Breakdown;
 
     const merkle = safeParse(
         fs.readFileSync(path.resolve(DATA_DIR, "last_merkle.json"), { encoding: "utf-8" }),
@@ -53,7 +52,7 @@ export const testBreakdown = async () => {
 
         for (const tokens of Object.values(vaults)) {
             for (const [token, data] of Object.entries(tokens)) {
-                const claimable = BigInt(data.claimable);
+                const claimable = BigInt((data as any).claimable);
                 if (claimable > 0n) {
                     tokenClaimable.set(token, (tokenClaimable.get(token) ?? 0n) + claimable);
                 }
