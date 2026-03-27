@@ -6,6 +6,8 @@
   "scripts": {
     "distribution": "npx ts-node src/main.ts",
     "debts-report": "npx ts-node src/analysis/debts_report.ts",
+    "breakdown": "npx ts-node src/6_breakdown.ts",
+    "test-breakdown": "npx ts-node src/7_test_breakdown.ts",
     "test": "npx ts-node src/tests/yb_default_twab.ts"
   },
   "keywords": [],

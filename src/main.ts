@@ -4,6 +4,7 @@ import { distribute } from "./2_distribution";
 import { generateMerkle } from "./3_merkle";
 import { check } from "./4_check";
 import { patch } from "./5_patch";
+import { buildBreakdown } from "./6_breakdown";
 
 dotenv.config();
 
@@ -22,6 +23,9 @@ const main = async () => {
 
     // Check claims
     await check();
+
+    // Build breakdown (user → vault → token detail)
+    await buildBreakdown();
 };
 
 main().catch(err => console.log(err));
