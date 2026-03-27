@@ -4,7 +4,7 @@
 
 Pipeline de distribution de rewards off-chain pour Stake DAO, base sur le protocole Merkl. Tourne sur Ethereum mainnet. Gere le cycle complet : lecture des incentives on-chain, calcul des allocations par TWAB, generation du Merkle tree, verification de solvabilite et simulation des claims.
 
-Le pipeline s'execute en 5 etapes sequentielles depuis `src/main.ts` :
+Le pipeline s'execute en 7 etapes sequentielles depuis `src/main.ts` :
 
 | Etape | Fichier | Role |
 |-------|---------|------|
@@ -13,6 +13,10 @@ Le pipeline s'execute en 5 etapes sequentielles depuis `src/main.ts` :
 | 2 | `2_distribution.ts` | Calcule les allocations par holder via TWAB |
 | 3 | `3_merkle.ts` | Genere le Merkle tree cumulatif |
 | 4 | `4_check.ts` | Verifie solvabilite + simule chaque claim |
+| 5 | `6_breakdown.ts` | Genere le breakdown par user/vault/token |
+| 6 | `7_refresh_cache.ts` | Rafraichit les caches via le worker Cloudflare |
+
+**IMPORTANT** : `refreshCache()` doit TOUJOURS etre le dernier appel dans `main()`. C'est l'etape qui invalide les caches du frontend — elle ne doit s'executer qu'une fois que toutes les donnees (merkle, breakdown) sont finalisees et ecrites sur disque.
 
 ### Adresses cles
 

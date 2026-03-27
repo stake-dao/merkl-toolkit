@@ -5,6 +5,7 @@ import { generateMerkle } from "./3_merkle";
 import { check } from "./4_check";
 import { patch } from "./5_patch";
 import { buildBreakdown } from "./6_breakdown";
+import { refreshCache } from "./7_refresh_cache";
 
 dotenv.config();
 
@@ -26,6 +27,9 @@ const main = async () => {
 
     // Build breakdown (user → vault → token detail)
     await buildBreakdown();
+
+    // Refresh caches via Cloudflare worker
+    await refreshCache();
 };
 
 main().catch(err => console.log(err));
