@@ -3,14 +3,14 @@ import * as dotenv from "dotenv";
 
 dotenv.config();
 
-const WORKER_URL = process.env.WORKER_URL;
+const WORKER_URL = process.env.WORKER_URL?.replace(/\/+$/, "");
 const MAX_RETRIES = 3;
 const BASE_DELAY = 2000;
 
-const postWithRetry = async (url: string): Promise<any> => {
+const postWithRetry = async (url: string, body?: object): Promise<any> => {
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-            const { data, status } = await axios.post(url);
+            const { data, status } = await axios.post(url, body);
             console.log(`   ${status} OK`);
             return data;
         } catch (err: any) {
@@ -32,7 +32,7 @@ export const refreshCache = async () => {
     console.log("🔄 Refreshing caches via Cloudflare worker...\n");
 
     console.log(`📤 POST ${WORKER_URL}/clear`);
-    await postWithRetry(`${WORKER_URL}/clear`);
+    await postWithRetry(`${WORKER_URL}/clear`, { key: "incentives" });
 
     console.log(`📤 POST ${WORKER_URL}/update/curve`);
     await postWithRetry(`${WORKER_URL}/update/curve`);
