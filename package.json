@@ -6,13 +6,17 @@
   "scripts": {
     "distribution": "npx ts-node src/main.ts",
     "debts-report": "npx ts-node src/analysis/debts_report.ts",
+    "breakdown": "npx ts-node src/6_breakdown.ts",
+    "rebuild-breakdown": "npx ts-node src/6_breakdown.ts --rebuild",
+    "test-breakdown": "npx ts-node src/7_test_breakdown.ts",
+    "refresh-cache": "npx ts-node src/7_refresh_cache.ts",
     "test": "npx ts-node src/tests/yb_default_twab.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "axios": "^1.12.2",
+    "axios": "1.14.0",
     "dotenv": "^17.2.2",
     "ethers": "^5.6.8",
     "merkletreejs": "^0.6.0",

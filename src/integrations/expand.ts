@@ -147,6 +147,7 @@ export async function expandWrapperAllocations(
             balance: "0",
             share: "0.000000",
             amount: amount.toString(),
+            source: "morpho",
         });
     }
 
