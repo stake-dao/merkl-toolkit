@@ -25,7 +25,7 @@ dependencies:
     version: 5.9.3
   viem:
     specifier: ^2.37.8
-    version: 2.47.17(typescript@5.9.3)
+    version: 2.47.18(typescript@5.9.3)
 
 devDependencies:
   tsx:
@@ -956,8 +956,8 @@ packages:
       es-object-atoms: 1.1.1
     dev: false
 
-  /get-tsconfig@4.13.8:
-    resolution: {integrity: sha512-J87BxkLXykmisLQ+KA4x2+O6rVf+PJrtFUO8lGyiRg4lyxJLJ8/v0sRAKdVZQOy6tR6lMRAF1NqzCf9BQijm0w==}
+  /get-tsconfig@4.14.0:
+    resolution: {integrity: sha512-yTb+8DXzDREzgvYmh6s9vHsSVCHeC0G3PI5bEXNBHtmshPnO+S5O7qgLEOn0I5QvMy6kpZN8K1NKGyilLb93wA==}
     dependencies:
       resolve-pkg-maps: 1.0.0
     dev: true
@@ -1131,7 +1131,7 @@ packages:
     hasBin: true
     dependencies:
       esbuild: 0.27.7
-      get-tsconfig: 4.13.8
+      get-tsconfig: 4.14.0
     optionalDependencies:
       fsevents: 2.3.3
     dev: true
@@ -1150,8 +1150,8 @@ packages:
     resolution: {integrity: sha512-wa7YjyUGfNZngI/vtK0UHAN+lgDCxBPCylVXGp0zu59Fz5aiGtNXaq3DhIov063MorB+VfufLh3JlF2KdTK3xg==}
     dev: false
 
-  /viem@2.47.17(typescript@5.9.3):
-    resolution: {integrity: sha512-yNUKw6b1nd1i96GcJPqp096w5VVjUky/6PLT8UeUsEArzhD9YRrC0QJ50o8YEF7xA6M0FK8e6u5tAMyBLLl7tw==}
+  /viem@2.47.18(typescript@5.9.3):
+    resolution: {integrity: sha512-m3kr+/i8MddeY5fmB2y2v5B0vDL0x8R4v/8gai4Lh4jh8KOWlQqml7PFLtilNomoDm3mINxdA0JnYBJfknNoEg==}
     peerDependencies:
       typescript: '>=5.0.4'
     peerDependenciesMeta:
