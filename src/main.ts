@@ -32,4 +32,7 @@ const main = async () => {
     await refreshCache();
 };
 
-main().catch(err => console.log(err));
+main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+});
