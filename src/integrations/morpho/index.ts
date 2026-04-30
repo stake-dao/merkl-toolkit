@@ -83,7 +83,7 @@ export class MorphoIntegration implements WrapperIntegration {
             });
             data = response.data;
         } catch (error) {
-            console.error(`❌ Failed to fetch Morpho markets from lending API: ${error}`);
+            console.error('❌ Failed to fetch Morpho markets from lending API');
             process.exit(1);
         }
 
