@@ -32,6 +32,36 @@ export const getIncentiveSource = (sender: string): IncentiveSource => {
     }
 };
 
+// Returns the timestamp of the next Thursday 01:00 UTC strictly after `start`.
+// If `start` falls on a Thursday, jumps to the following week's Thursday
+// (i.e., +7 days), never the same calendar day.
+const nextThursdayOneAmUTC = (start: bigint): bigint => {
+    const d = new Date(Number(start) * 1000);
+    const day = d.getUTCDay(); // 0=Sun .. 4=Thu .. 6=Sat
+    let daysToAdd = (4 - day + 7) % 7;
+    if (daysToAdd === 0) daysToAdd = 7; // start IS Thursday → roll to next week's Thu
+    const nextThuMs = Date.UTC(
+        d.getUTCFullYear(),
+        d.getUTCMonth(),
+        d.getUTCDate() + daysToAdd,
+        1, 0, 0, 0
+    );
+    return BigInt(Math.floor(nextThuMs / 1000));
+};
+
+// Forces the LM cycle end to align with the CRV cycle reset at Thursday
+// 01:00 UTC. For VM hook bridges, start is always Thursday or Friday, so
+// "next Thursday 01:00 UTC after start" lands on the upcoming Thursday's
+// 01:00 UTC — exactly when CRV restarts → no APR overlap.
+// Only applies to incentives bridged via VoteMarket hooks (source === "vm")
+// whose end is still in the future.
+const adjustEndForVmHook = (source: IncentiveSource, start: bigint, end: bigint): bigint => {
+    if (source !== "vm") return end;
+    const nowSec = BigInt(Math.floor(Date.now() / 1000));
+    if (end <= nowSec) return end;
+    return nextThursdayOneAmUTC(start);
+};
+
 const url = "https://raw.githubusercontent.com/stake-dao/api/main"
 const PROTOCOLS = ["v2/balancer", "v2/curve", "pendle"];
 const V2_CURVE_CHAIN_IDS = [1]
@@ -123,13 +153,19 @@ export const getNewIncentives = async (fromId: number, toId: number): Promise<In
             })
         ])
 
+        const source = getIncentiveSource(incentive[6]);
+        const adjustedEnd = adjustEndForVmHook(source, incentive[3], incentive[4]);
+        if (adjustedEnd !== incentive[4]) {
+            console.log(`⏱️  Incentive #${i} VM end shifted: ${incentive[4]} → ${adjustedEnd} (next Thu 01:00 UTC from start)`);
+        }
+
         incentives.push({
             id: i,
             gauge: incentive[0],
             reward: incentive[1],
             duration: incentive[2],
             start: incentive[3],
-            end: incentive[4],
+            end: adjustedEnd,
             fromChainId: incentive[5],
             sender: incentive[6],
             amount: incentive[7],
@@ -139,7 +175,7 @@ export const getNewIncentives = async (fromId: number, toId: number): Promise<In
             rewardSymbol: symbol,
             ended: false,
             distributedUntil: incentive[3],
-            source: getIncentiveSource(incentive[6]),
+            source,
         });
     }
 
