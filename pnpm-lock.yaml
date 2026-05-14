@@ -25,12 +25,12 @@ dependencies:
     version: 5.9.3
   viem:
     specifier: ^2.37.8
-    version: 2.48.11(typescript@5.9.3)
+    version: 2.49.0(typescript@5.9.3)
 
 devDependencies:
   tsx:
-    specifier: ^4.21.0
-    version: 4.21.0
+    specifier: ^4.21.1
+    version: 4.21.1
 
 packages:
 
@@ -956,12 +956,6 @@ packages:
       es-object-atoms: 1.1.1
     dev: false
 
-  /get-tsconfig@4.14.0:
-    resolution: {integrity: sha512-yTb+8DXzDREzgvYmh6s9vHsSVCHeC0G3PI5bEXNBHtmshPnO+S5O7qgLEOn0I5QvMy6kpZN8K1NKGyilLb93wA==}
-    dependencies:
-      resolve-pkg-maps: 1.0.0
-    dev: true
-
   /gopd@1.2.0:
     resolution: {integrity: sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==}
     engines: {node: '>= 0.4'}
@@ -1081,10 +1075,6 @@ packages:
     engines: {node: '>=10'}
     dev: false
 
-  /resolve-pkg-maps@1.0.0:
-    resolution: {integrity: sha512-seS2Tj26TBVOC2NIc2rOe2y2ZO7efxITtLZcGSOnHHNOQ7CkiUBfw0Iw2ck6xkIhPwLhKNLS8BO+hEpngQlqzw==}
-    dev: true
-
   /scrypt-js@3.0.1:
     resolution: {integrity: sha512-cdwTTnqPu0Hyvf5in5asVdZocVDTNRmR7XEcJuIzMjJeSHybHl7vpB66AzwTaIg6CLSbtjcxc8fqcySfnTkccA==}
     dev: false
@@ -1125,13 +1115,12 @@ packages:
       yn: 3.1.1
     dev: false
 
-  /tsx@4.21.0:
-    resolution: {integrity: sha512-5C1sg4USs1lfG0GFb2RLXsdpXqBSEhAaA/0kPL01wxzpMqLILNxIxIOKiILz+cdg/pLnOUxFYOR5yhHU666wbw==}
+  /tsx@4.21.1:
+    resolution: {integrity: sha512-5QE2Q04cN1u0993w0LT5rPw3faZqZU1fFn1mGE0pV53N1Dn7c+QFFxQu1mBeSgeOXwFyTicZw02wVgp3Tb5cAQ==}
     engines: {node: '>=18.0.0'}
     hasBin: true
     dependencies:
       esbuild: 0.27.7
-      get-tsconfig: 4.14.0
     optionalDependencies:
       fsevents: 2.3.3
     dev: true
@@ -1150,8 +1139,8 @@ packages:
     resolution: {integrity: sha512-wa7YjyUGfNZngI/vtK0UHAN+lgDCxBPCylVXGp0zu59Fz5aiGtNXaq3DhIov063MorB+VfufLh3JlF2KdTK3xg==}
     dev: false
 
-  /viem@2.48.11(typescript@5.9.3):
-    resolution: {integrity: sha512-+WZ5E0dBS6GtKb+1wEk5DeYRRRW42+pFnXCo67Ydodf42sBwO+hu3wnQy66lc4MKmHz+llPVdbyehYr9oTE2iw==}
+  /viem@2.49.0(typescript@5.9.3):
+    resolution: {integrity: sha512-vaasyOBFiCWYtw9JD8iRoaHPppk14kQH140qgVmrxkDEgv4qTX9Hwi6F+wF+s3Y7SStV5OtnN2ulJev+NQ7KDw==}
     peerDependencies:
       typescript: '>=5.0.4'
     peerDependenciesMeta:
