@@ -250,18 +250,17 @@ export class TokenHolderScanner {
     }
 
     public async getTotalSupply(vault: Address, blockNumber: bigint): Promise<bigint> {
-        try {
-            return await this.client.readContract({
-                address: vault,
-                abi: erc20Abi,
-                functionName: 'totalSupply',
-                args: [],
-                blockNumber,
-            });
-        }
-        catch (e) {
-            console.error(e);
-            process.exit(1);
-        }
+        return await this.client.readContract({
+            address: vault,
+            abi: erc20Abi,
+            functionName: 'totalSupply',
+            args: [],
+            blockNumber,
+        });
+    }
+
+    public async hasCodeAt(address: Address, blockNumber: bigint): Promise<boolean> {
+        const code = await this.client.getCode({ address, blockNumber });
+        return !!code && code !== '0x';
     }
 }

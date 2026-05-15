@@ -123,10 +123,27 @@ const buildSnapshots = async (
 
     const snapshotBlock = startBlock > 0n ? startBlock - 1n : startBlock;
     // 2. Gather starting balances and every transfer affecting the vault.
-    const holdersInfo = await getTokenHolders(vault, Number(endBlock));
     const scanner = new TokenHolderScanner(mainnetRpcUrl, vault);
-    const initialBalances = await scanner.getBalancesAtBlock(holdersInfo.users, snapshotBlock);
-    const totalSupply = await scanner.getTotalSupply(vault, snapshotBlock);
+
+    const deployedByEnd = await scanner.hasCodeAt(vault, endBlock);
+    if (!deployedByEnd) {
+        console.error(`Vault ${vault} has no code at endBlock ${endBlock} — wrong address or wrong chain`);
+        process.exit(1);
+    }
+
+    const holdersInfo = await getTokenHolders(vault, Number(endBlock));
+    const deployedAtSnapshot = await scanner.hasCodeAt(vault, snapshotBlock);
+
+    let initialBalances: Map<Address, bigint>;
+    let totalSupply: bigint;
+    if (deployedAtSnapshot) {
+        initialBalances = await scanner.getBalancesAtBlock(holdersInfo.users, snapshotBlock);
+        totalSupply = await scanner.getTotalSupply(vault, snapshotBlock);
+    } else {
+        console.log(`ℹ️ Vault ${vault} not yet deployed at snapshot block ${snapshotBlock}, starting from empty state`);
+        initialBalances = new Map();
+        totalSupply = 0n;
+    }
 
     const sumBalances = [...initialBalances.values()].reduce((acc: bigint, val: bigint) => acc + val, BigInt(0));
     if (sumBalances < totalSupply) {
