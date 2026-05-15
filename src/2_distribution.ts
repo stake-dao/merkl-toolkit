@@ -127,8 +127,13 @@ const buildSnapshots = async (
 
     const deployedByEnd = await scanner.hasCodeAt(vault, endBlock);
     if (!deployedByEnd) {
-        console.error(`Vault ${vault} has no code at endBlock ${endBlock} — wrong address or wrong chain`);
-        process.exit(1);
+        const deployedNow = await scanner.hasCodeAt(vault, currentBlockNumber);
+        if (!deployedNow) {
+            console.error(`Vault ${vault} has no code at endBlock ${endBlock} nor at current block — wrong address or wrong chain`);
+            process.exit(1);
+        }
+        console.warn(`⚠️ Vault ${vault} deployed after window end (endBlock ${endBlock}) — skipping, no holders existed during window`);
+        return null;
     }
 
     const holdersInfo = await getTokenHolders(vault, Number(endBlock));
