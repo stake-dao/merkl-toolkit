@@ -25,12 +25,12 @@ dependencies:
     version: 5.9.3
   viem:
     specifier: ^2.37.8
-    version: 2.50.3(typescript@5.9.3)
+    version: 2.50.4(typescript@5.9.3)
 
 devDependencies:
   tsx:
-    specifier: ^4.22.2
-    version: 4.22.2
+    specifier: ^4.22.3
+    version: 4.22.3
 
 packages:
 
@@ -1115,8 +1115,8 @@ packages:
       yn: 3.1.1
     dev: false
 
-  /tsx@4.22.2:
-    resolution: {integrity: sha512-6w9FwtT8WQqRAyTNR+Z+86kghRqpmOLjXUrBlBT6T+CQGDuIMm0VmAqaFUFBIeKDTGobE6/YSigZYLeomzBaRg==}
+  /tsx@4.22.3:
+    resolution: {integrity: sha512-mdoNxBC/cSQObGGVQ5Bpn5i+yv7j68gk3Nfm3wFjcJg3Z0Mix9jzAFfP12prmm5eVGmDKtp0yyArrs0Q+8gZHg==}
     engines: {node: '>=18.0.0'}
     hasBin: true
     dependencies:
@@ -1139,8 +1139,8 @@ packages:
     resolution: {integrity: sha512-wa7YjyUGfNZngI/vtK0UHAN+lgDCxBPCylVXGp0zu59Fz5aiGtNXaq3DhIov063MorB+VfufLh3JlF2KdTK3xg==}
     dev: false
 
-  /viem@2.50.3(typescript@5.9.3):
-    resolution: {integrity: sha512-xJ4XlnkKM2Of0A0TPS4KZNZU1YLYM8+mMirkNA+atTg6Crjg0YqWvSIckszSEmlQ4qH/5lhZ/DILgmNlepbV5A==}
+  /viem@2.50.4(typescript@5.9.3):
+    resolution: {integrity: sha512-rf98F4s3Vlb+uJZEKfay3IbBw3CNCbVtx5Y3UIljlO2tSX420g/J0WQSYsjzBSasUFgxgsXabji14O9kGbiqgg==}
     peerDependencies:
       typescript: '>=5.0.4'
     peerDependenciesMeta:
