@@ -10,7 +10,7 @@ import { morphoAbi, erc20Abi, depositedEvent, withdrawnEvent, liquidatedEvent } 
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 const MORPHO_ADDRESS = "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb" as Address;
-const LENDING_API = "https://api-lending.stakedao.org/v1/graphql";
+const LENDING_API = process.env.LENDING_WORKER_URL ?? "";
 
 /**
  * Cached depositor set per wrapper address.
