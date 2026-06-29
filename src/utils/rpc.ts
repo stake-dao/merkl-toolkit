@@ -116,6 +116,18 @@ const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     }
 };
 
+// RouteMesh is a multi-chain load balancer that routes by chain ID:
+// https://lb.routeme.sh/rpc/{chainId}/{apiKey}
+// Prepend it as the highest-priority endpoint for every configured chain when
+// the API key is present, so the priority order becomes: RouteMesh > Alchemy > public RPCs.
+if (process.env.ROUTEMESH_API_KEY) {
+    for (const [chainId, config] of Object.entries(CHAIN_CONFIGS)) {
+        config.rpcUrls.unshift(
+            `https://lb.routeme.sh/rpc/${chainId}/${process.env.ROUTEMESH_API_KEY}`
+        );
+    }
+}
+
 const CHAIN_CONFIGS_FORK: Record<number, ChainConfig> = {
     1: {
         chain: mainnet,

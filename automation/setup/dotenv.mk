@@ -8,12 +8,16 @@ ifneq (,$(wildcard .env))
     ifndef WEB3_ALCHEMY_API_KEY
         $(warning WEB3_ALCHEMY_API_KEY not found in .env file)
     endif
+    ifndef ROUTEMESH_API_KEY
+        $(warning ROUTEMESH_API_KEY not found in .env file)
+    endif
 else
     $(warning No .env file found, environment variables may be missing)
 endif
 
 # Export critical environment variables explicitly
 export WEB3_ALCHEMY_API_KEY
+export ROUTEMESH_API_KEY
 export EXPLORER_KEY
 export TELEGRAM_VERIF_API_KEY
 export TELEGRAM_VERIF_CHAT_ID
