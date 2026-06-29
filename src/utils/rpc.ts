@@ -175,11 +175,12 @@ export async function getClient(chainId: number, useFork: boolean = false, skipC
         config.rpcUrls.map(url => testRpcEndpoint(url, chainId))
     );
 
-    // Find all working endpoints sorted by latency
+    // Keep working endpoints in their declared priority order (first = highest
+    // priority, e.g. Alchemy). We pick the first one that responds rather than
+    // the fastest, so the preferred provider is always used when it's healthy.
     const workingEndpoints = latencyTests
         .map((latency, index) => ({ latency, index, url: config.rpcUrls[index] }))
-        .filter(endpoint => endpoint.latency !== Infinity)
-        .sort((a, b) => a.latency - b.latency);
+        .filter(endpoint => endpoint.latency !== Infinity);
 
     if (workingEndpoints.length === 0) {
         console.error(`[RPC] No healthy RPC endpoints available for chain ${chainId}`);
@@ -215,7 +216,7 @@ export async function getClient(chainId: number, useFork: boolean = false, skipC
 
     const bestEndpoint = workingEndpoints[0];
 
-    // Create client with the fastest endpoint and fallback transport
+    // Create client with the highest-priority healthy endpoint and fallback transport
     const client = createPublicClient({
         chain: config.chain,
         transport: http(bestEndpoint.url, {
