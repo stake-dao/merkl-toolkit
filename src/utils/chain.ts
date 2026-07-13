@@ -2,7 +2,8 @@ import { Address, parseAbiItem } from "viem";
 
 export const TRANSFER_EVENT = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
 
-export const DEFAULT_LOG_CHUNK_SIZE = 20_000n;
+// RPC providers (routemesh) limit eth_getLogs to 10,000 blocks per request
+export const DEFAULT_LOG_CHUNK_SIZE = 10_000n;
 
 export type BlockTimestampCache = Map<string, number>;
 
