@@ -10,6 +10,7 @@
     "rebuild-breakdown": "npx ts-node src/6_breakdown.ts --rebuild",
     "test-breakdown": "npx ts-node src/7_test_breakdown.ts",
     "refresh-cache": "npx ts-node src/7_refresh_cache.ts",
+    "verify-distribution": "npx ts-node src/scripts/verify_distribution.ts",
     "test": "npx ts-node src/tests/yb_default_twab.ts"
   },
   "keywords": [],
