@@ -29,8 +29,8 @@ dependencies:
 
 devDependencies:
   tsx:
-    specifier: ^4.23.11
-    version: 4.23.11
+    specifier: ^4.23.12
+    version: 4.23.12
 
 packages:
 
@@ -1116,8 +1116,8 @@ packages:
       yn: 3.1.1
     dev: false
 
-  /tsx@4.23.11:
-    resolution: {integrity: sha512-Ry2oTEUnhBdeEdWIztY8kf3/nBGnPnjMLVGL0YfdRXMORuPER5NlKmayqxtxRxwB1xBN+RivRaJfe7PM1rtiyw==}
+  /tsx@4.23.12:
+    resolution: {integrity: sha512-FDf4L4sYzKtzWYhU/Xm0AQFdTjdIxNo9ElTf2mxXM6k8YMHXzYUe4yODVaXP4V9uMFbVg8c0qyBccK2OOxb45Q==}
     engines: {node: '>=18.0.0'}
     hasBin: true
     dependencies:
