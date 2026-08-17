@@ -25,7 +25,7 @@ dependencies:
     version: 5.9.3
   viem:
     specifier: ^2.37.8
-    version: 2.55.16(typescript@5.9.3)
+    version: 2.55.17(typescript@5.9.3)
 
 devDependencies:
   tsx:
@@ -1140,8 +1140,8 @@ packages:
     resolution: {integrity: sha512-wa7YjyUGfNZngI/vtK0UHAN+lgDCxBPCylVXGp0zu59Fz5aiGtNXaq3DhIov063MorB+VfufLh3JlF2KdTK3xg==}
     dev: false
 
-  /viem@2.55.16(typescript@5.9.3):
-    resolution: {integrity: sha512-bKs/0PNIkiaG45ZM0ERddHSVtku7hvyebK2i3bMLuyJQevh15tpDh3MiE3PhLjx5kxGrvizaXQw67gWc9Jl7fQ==}
+  /viem@2.55.17(typescript@5.9.3):
+    resolution: {integrity: sha512-XKASpfG9jznxsU/J7Bj2k9aS0UZgU3sBcwVoQ6slD5T1RmNJHh3khmFVJuRKjrOe3uqHb0FJKbb6jwE49WtVDQ==}
     peerDependencies:
       typescript: '>=5.0.4'
     peerDependenciesMeta:
