@@ -32,6 +32,18 @@ export const getIncentiveSource = (sender: string): IncentiveSource => {
     }
 };
 
+// Cross-chain incentives are recorded by the distributor without proof that tokens
+// arrived, and LaPoste lets anyone send to it. Only our VoteMarket hooks bridge
+// real leftovers; mainnet incentives are safe because addIncentive pulls the tokens.
+export const isTrustedIncentive = (fromChainId: bigint, sender: string): boolean => {
+    if (fromChainId === BigInt(mainnet.id)) return true;
+    try {
+        return VM_HOOK_ADDRESSES.has(getAddress(sender));
+    } catch {
+        return false;
+    }
+};
+
 // Returns the timestamp of the next Thursday 01:00 UTC strictly after `start`.
 // If `start` falls on a Thursday, jumps to the following week's Thursday
 // (i.e., +7 days), never the same calendar day.
@@ -116,6 +128,11 @@ export const getNewIncentives = async (fromId: number, toId: number): Promise<In
         })) as Incentive;
 
         if (getAddress(incentive[1]) === NULL_ADDRESS && BigInt(incentive[7]) === BigInt(0)) {
+            continue;
+        }
+
+        if (!isTrustedIncentive(BigInt(incentive[5]), incentive[6])) {
+            console.log(`🚫 Incentive #${i} skipped: untrusted sender ${incentive[6]} from chain ${incentive[5]}`);
             continue;
         }
 
