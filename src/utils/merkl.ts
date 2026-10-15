@@ -119,28 +119,20 @@ export const getMerklLastId = async (): Promise<number> => {
     }));
 };
 
-export const getNewIncentives = async (fromId: number, toId: number, retryIds: number[] = []): Promise<IncentiveExtended[]> => {
+export const getNewIncentives = async (fromId: number, toId: number): Promise<IncentiveExtended[]> => {
 
     const protocolStrategies = await getAllStakeDaoStrategies();
 
     const client = await getClient(mainnet.id);
     const incentives: IncentiveExtended[] = [];
 
-    const ids = [...retryIds, ...Array.from({ length: Math.max(0, toId - fromId) }, (_, index) => fromId + index)];
-    for (const i of ids) {
+    for (let i = fromId; i < toId; i++) {
         const incentive = (await client.readContract({
             address: MERKL_CONTRACT,
             abi: merklAbi,
             functionName: "incentives",
             args: [BigInt(i)],
         })) as Incentive;
-
-        // Unconfigured recoveries are skipped without blocking other incentives.
-        const recovery = recoveryForIncentive({
-            id: i, gauge: incentive[0], reward: incentive[1], amount: incentive[7],
-            manager: incentive[8], sender: incentive[6], fromChainId: incentive[5],
-        });
-        if (recovery === null) continue;
 
         if (getAddress(incentive[1]) === NULL_ADDRESS && BigInt(incentive[7]) === BigInt(0)) {
             continue;
@@ -165,6 +157,10 @@ export const getNewIncentives = async (fromId: number, toId: number, retryIds: n
             }
         }
 
+        const recovery = recoveryForIncentive({
+            id: i, gauge: incentive[0], reward: incentive[1], amount: incentive[7],
+            manager: incentive[8], sender: incentive[6], fromChainId: incentive[5],
+        });
         const vault = recovery?.vault ?? strategy?.vault ?? VAULT_FALLBACKS[incentive[0].toLowerCase()];
         if (!vault) {
             continue;

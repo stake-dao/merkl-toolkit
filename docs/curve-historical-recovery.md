@@ -27,19 +27,23 @@ before these weeks.
 
 ## Use after an authorized bridge
 
-1. Keep this importer change active before recovery. After bridging and delivery,
-   identify each new mainnet `IncentiveAdded` ID from the corresponding delivery
-   events; check the hook sender, source chain, gauge, token, amount and manager.
-2. Fill the six `incentiveId: null` fields in
-   [`config/curve-recovery.json`](../config/curve-recovery.json) with those exact IDs.
-   No IDs are invented before delivery. Matching unconfigured leftovers from ID
-   `2467` onward are skipped with a warning; other incentives continue normally.
-   Once configured, missing recovery IDs are retried even if the import cursor has
-   advanced. Already imported incentives are not fetched again. Invalid recovery
-   fields or historical weeks also skip only the affected incentive.
-3. Run the regular pipeline only when authorized. New incentives receive the
-   historical `start`, `end`, `duration`, vault and initial `distributedUntil`.
-   Existing imported records are not modified or reset on subsequent runs.
+1. Stop the distribution pipeline before bridging the historical hook epochs.
+2. After bridging and mainnet delivery, identify each new `IncentiveAdded` ID from
+   the corresponding delivery events; check the hook sender, source chain, gauge,
+   token, amount and manager.
+3. Fill the six `incentiveId: null` fields in
+   [`config/curve-recovery.json`](../config/curve-recovery.json) with those exact IDs
+   **before restarting the pipeline**. No IDs are invented before delivery.
+4. Restart the regular pipeline. Incentive discovery uses its existing cursor and
+   import rules. Only an exact match on ID, Arbitrum chain, v2 hook, gauge, token,
+   amount and manager receives the historical `start`, `end`, `duration`, vault
+   and initial `distributedUntil`. An absent ID or any mismatch leaves the normal
+   import behavior unchanged; there is no recovery-specific skip or retry.
+5. The unchanged distribution engine allocates the historical window and saves
+   `ended: true` after processing. Subsequent runs exclude that incentive.
+
+The IDs must be configured before the first import: existing records are not
+re-imported or reset when the config changes.
 
 The existing historical balance/transfer calculation distributes over each original
 week and adds claims to the cumulative Merkle amounts. Its existing per-second
