@@ -7,6 +7,7 @@ import { Address, erc20Abi, getAddress } from "viem";
 import axios from "axios";
 import { Strategy } from "../interfaces/Strategy";
 import { merklAbi } from "../abis/Merkl";
+import { recoveryForIncentive } from "../recovery/curve";
 
 // Known VoteMarket IncentiveGaugeHook addresses (Arbitrum → Mainnet bridge senders)
 // Update when a new hook version is deployed (see contracts-monorepo/packages/periphery/script/votemarket-infra/)
@@ -77,6 +78,12 @@ const adjustEndForVmHook = (source: IncentiveSource, start: bigint, end: bigint)
 const url = "https://raw.githubusercontent.com/stake-dao/api/main"
 const PROTOCOLS = ["v2/balancer", "v2/curve", "pendle"];
 const V2_CURVE_CHAIN_IDS = [1]
+
+// Mainnet Balancer vaults registered on-chain but missing from the strategies API.
+const VAULT_FALLBACKS: Record<string, Address> = {
+    "0xdc2df969ee5e66236b950f5c4c5f8abe62035df2": "0xA7D21F6e72449C8a97D0Ac321Fa01bEc65b48FAc", // sdBAL
+    "0xd5a0eb558d62780b10ecc202d0049b89f6145073": "0xbF8C423E141306Dc34A7aa9a73E4EA8F9B188C45", // tETH/wstETH
+};
 
 interface ProtocolStrategies {
     protocol: string;
@@ -150,7 +157,12 @@ export const getNewIncentives = async (fromId: number, toId: number): Promise<In
             }
         }
 
-        if (!strategy) {
+        const recovery = recoveryForIncentive({
+            id: i, gauge: incentive[0], reward: incentive[1], amount: incentive[7],
+            manager: incentive[8], sender: incentive[6], fromChainId: incentive[5],
+        });
+        const vault = recovery?.vault ?? strategy?.vault ?? VAULT_FALLBACKS[incentive[0].toLowerCase()];
+        if (!vault) {
             continue;
         }
 
@@ -172,11 +184,11 @@ export const getNewIncentives = async (fromId: number, toId: number): Promise<In
 
         const source = getIncentiveSource(incentive[6]);
         const adjustedEnd = adjustEndForVmHook(source, incentive[3], incentive[4]);
-        if (adjustedEnd !== incentive[4]) {
+        if (!recovery && adjustedEnd !== incentive[4]) {
             console.log(`⏱️  Incentive #${i} VM end shifted: ${incentive[4]} → ${adjustedEnd} (next Thu 01:00 UTC from start)`);
         }
 
-        incentives.push({
+        const imported: IncentiveExtended = {
             id: i,
             gauge: incentive[0],
             reward: incentive[1],
@@ -187,13 +199,22 @@ export const getNewIncentives = async (fromId: number, toId: number): Promise<In
             sender: incentive[6],
             amount: incentive[7],
             manager: incentive[8],
-            vault: strategy.vault,
+            vault,
             rewardDecimals: decimals,
             rewardSymbol: symbol,
             ended: false,
             distributedUntil: incentive[3],
             source,
-        });
+        };
+
+        if (recovery) {
+            imported.start = BigInt(recovery.historicalStart);
+            imported.end = BigInt(recovery.historicalEnd);
+            imported.duration = imported.end - imported.start;
+            imported.distributedUntil = imported.start;
+        }
+
+        incentives.push(imported);
     }
 
     return incentives;

@@ -60,6 +60,12 @@ interface HolderDataExtended extends HolderData {
 export const getTokenHolders = async (vault: Address, toBlock: number): Promise<HolderDataExtended> => {
 
     const holdersData = getHolders(vault);
+    // A newer cache already contains every address seen by the historical block.
+    // Balances are read at the historical snapshot by the caller; keep the cache's
+    // forward cursor and avoid an invalid latest->past scan or a cache regression.
+    if (holdersData.blockNumber >= toBlock) {
+        return { ...holdersData, fromBlock: holdersData.blockNumber };
+    }
     const fromBlock = holdersData.blockNumber > 0 ? holdersData.blockNumber : 22575062;
 
     const scanner = new TokenHolderScanner(process.env.MAINNET_RPC_URL, vault);
