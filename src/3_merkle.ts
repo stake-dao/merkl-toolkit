@@ -14,6 +14,8 @@ import {
     writeMerkle,
 } from "./utils/merkle";
 import { MerkleData } from "./interfaces/MerkleData";
+import { activeExpiryBaseline } from "./utils/expiry";
+import { TREASURY_ADDRESS } from "./constants";
 import { safeStringify } from "./utils/parse";
 
 export const generateMerkle = async () => {
@@ -48,6 +50,9 @@ export const generateMerkle = async () => {
         merkle = getMerkle(previousDistributionData.timestamp);
     }
 
+    const baseline = await activeExpiryBaseline(merkle);
+    merkle = baseline.merkle;
+
     console.log("📝 Loading current distribution...");
     const currentDistribution = getDistribution(lastDistributionData.timestamp);
     console.log(
@@ -70,6 +75,13 @@ export const generateMerkle = async () => {
         debts
     );
 
+    for (const tokens of Object.values(distributionCombined)) {
+        for (const token of Object.keys(tokens)) {
+            distributionCombined[TREASURY_ADDRESS] ??= {};
+            distributionCombined[TREASURY_ADDRESS][token] ??= "0";
+        }
+    }
+
     // Save updated debts
     if (debts) {
         const remainingDebtors = Object.keys(debts).length;
@@ -84,6 +96,8 @@ export const generateMerkle = async () => {
 
     console.log("🌳 Generating merkle tree...");
     const merkleData = generateMerkleTree(distributionCombined);
+    merkleData.parentRoot = baseline.root;
+    merkleData.firstDistribution = baseline.firstDistribution ?? currentDistribution.timestamp;
     console.log(`✅ Merkle root generated: ${merkleData.merkleRoot}`);
 
     console.log("🔑 Normalizing addresses...");
