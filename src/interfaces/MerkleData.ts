@@ -1,6 +1,8 @@
 
 export interface MerkleData {
     merkleRoot: string;
+    parentRoot?: string;
+    firstDistribution?: number;
     claims: {
         [address: string]: AddressClaim;
     };
