@@ -538,26 +538,3 @@ Contrat Merkl on-chain (incentives, claimed, root)
        v
 Publication de la nouvelle root on-chain (hors scope)
 ```
-
-### Adoption d'une recuperation approuvee par Safe
-
-Avant de modifier les curseurs d'incentives, `main.ts` exige que le dernier
-merkle corresponde a la root Ethereum active ou a une recuperation adoptee.
-`generateMerkle()` utilise cette meme resolution pour son cumul precedent.
-Une root inconnue arrete le pipeline : reutiliser silencieusement l'ancien
-cumul pourrait recrediter des rewards expires.
-
-Apres une execution Safe finalisee, le workflow d'adoption de `bounties-report`
-propose une PR contenant `data/last_merkle.json` et
-`data/recoveries/<root>.json` (`sourceRoot`, `receipt`, `merkle`). Le resolveur
-verifie le parent exact et reconstruit le merkle avant de l'utiliser. Les
-archives `data/distributions/` restent inchangees. Aucun ancien cumul n'est
-soustrait une seconde fois : la prochaine distribution ajoute seulement ses
-nouveaux rewards a la baseline adoptee.
-
-Garder les generateurs et publishers concurrents en pause, jobs en cours
-termines, jusqu'a adoption et verification des proofs servis. Ce controle
-local n'annule pas une transaction de publication deja preparee.
-
-Test sans RPC ni modification de `data/` :
-`node_modules/.bin/tsx src/tests/recovery_baseline.ts`.
