@@ -6,10 +6,17 @@ import { check } from "./4_check";
 import { patch } from "./5_patch";
 import { buildBreakdown } from "./6_breakdown";
 import { refreshCache } from "./7_refresh_cache";
+import fs from "fs";
+import path from "path";
+import { readActiveBaseline } from "./utils/merkle";
 
 dotenv.config();
 
 const main = async () => {
+    // Stop before advancing incentive cursors if an on-chain recovery has not
+    // been adopted locally. No old root may restore expired entitlements.
+    await readActiveBaseline(JSON.parse(fs.readFileSync(path.resolve(__dirname, "../data/last_merkle.json"), "utf8")));
+
     // Patch overclaimed amounts (runs on previous merkle before new rewards)
     //await patch();
 

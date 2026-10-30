@@ -10,6 +10,7 @@ import {
     createCombineDistribution,
     generateMerkleTree,
     getMerkle,
+    readActiveBaseline,
     writeLastMerkle,
     writeMerkle,
 } from "./utils/merkle";
@@ -45,7 +46,7 @@ export const generateMerkle = async () => {
         console.log(
             `📖 Loading previous merkle (timestamp ${previousDistributionData.timestamp})...`
         );
-        merkle = getMerkle(previousDistributionData.timestamp);
+        merkle = await readActiveBaseline(getMerkle(previousDistributionData.timestamp));
     }
 
     console.log("📝 Loading current distribution...");
