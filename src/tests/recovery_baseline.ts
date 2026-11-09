@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createCombineDistribution, generateMerkleTree, resolveRecoveryBaseline } from '../utils/merkle';
 import { Distribution } from '../interfaces/Distribution';
+import { TREASURY_FEE_RECIPIENT } from '../constants';
 
 const account = '0x1111111111111111111111111111111111111111';
 const token = '0x2222222222222222222222222222222222222222';
@@ -26,8 +27,16 @@ try {
     const next = createCombineDistribution(newRewards, baseline);
     assert.equal(next[account][token], '73'); // Old-baseline bug would restore 113.
     assert.equal(next[dao][token], '44');
+    assert.equal(next[TREASURY_FEE_RECIPIENT][token], '0');
     assert.equal(BigInt(next[account][token]) + BigInt(next[dao][token]), 117n);
     assert.deepEqual(resolveRecoveryBaseline(recovered, recovered.merkleRoot, directory), recovered);
+    const second = generateMerkleTree({ [account]: { [token]: '41' }, [dao]: { [token]: '44' }, [TREASURY_FEE_RECIPIENT]: { [token]: '19' } });
+    fs.writeFileSync(path.join(directory, `${second.merkleRoot}.json`), JSON.stringify({ sourceRoot: recovered.merkleRoot, merkle: second }));
+    assert.deepEqual(resolveRecoveryBaseline(before, second.merkleRoot, directory), second);
+    const afterChunks = createCombineDistribution(newRewards, second);
+    assert.equal(afterChunks[account][token], '54');
+    assert.equal(afterChunks[TREASURY_FEE_RECIPIENT][token], '19');
+    assert.equal(afterChunks[dao][token], '44');
     fs.writeFileSync(file, JSON.stringify({ sourceRoot: recovered.merkleRoot, merkle: recovered }));
     assert.throws(() => resolveRecoveryBaseline(before, recovered.merkleRoot, directory), /parent mismatch/);
     fs.writeFileSync(file, JSON.stringify({ sourceRoot: before.merkleRoot, merkle: { ...before, merkleRoot: recovered.merkleRoot } }));
