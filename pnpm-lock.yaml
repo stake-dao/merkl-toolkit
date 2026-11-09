@@ -25,7 +25,7 @@ dependencies:
     version: 5.9.3
   viem:
     specifier: ^2.37.8
-    version: 2.57.16(typescript@5.9.3)
+    version: 2.57.17(typescript@5.9.3)
 
 devDependencies:
   tsx:
@@ -1050,8 +1050,8 @@ packages:
     resolution: {integrity: sha512-JIYlbt6g8i5jKfJ3xz7rF0LXmv2TkDxBLUkiBeZ7bAx4GnnNMr8xFpGnOxn6GhTEHx3SjRrZEoU+j04prX1ktg==}
     dev: false
 
-  /ox@0.14.59(typescript@5.9.3):
-    resolution: {integrity: sha512-Y+DPEQScTEGKteQATjtytE1JRQ5cg1R2+DvYQ/lbhUCm/xS9n0Jnkkf2AqQyIntefQxs8xY6dZ+kyNZ7zf2FzA==}
+  /ox@0.14.63(typescript@5.9.3):
+    resolution: {integrity: sha512-TSKYN151boL1Aq/vsFrd8Buvd7v+oTQr8V7z4f4QQTSMB+ohD8cbNbHCtKRLI0Gs8LuYKirf5qvElTKVIFe2jw==}
     peerDependencies:
       typescript: '>=5.4.0'
     peerDependenciesMeta:
@@ -1140,8 +1140,8 @@ packages:
     resolution: {integrity: sha512-wa7YjyUGfNZngI/vtK0UHAN+lgDCxBPCylVXGp0zu59Fz5aiGtNXaq3DhIov063MorB+VfufLh3JlF2KdTK3xg==}
     dev: false
 
-  /viem@2.57.16(typescript@5.9.3):
-    resolution: {integrity: sha512-+4uaUw3NfkqjaqsZp8Zci94K33oc9rv7mIUgvPduJxsY/tI0ASi2YkaXoUVSBGfdIw/QPWuVnIf9LTFf35IoMg==}
+  /viem@2.57.17(typescript@5.9.3):
+    resolution: {integrity: sha512-yIMqNoKoVAMwX+zVbqkxfqq7qbGHmKXZidh/xfVpiPTJlAbbDDdDIMH5dDQWxhZcj56L8tPOwsIIxF618P+TOg==}
     peerDependencies:
       mppx: '>=0.17.0'
       typescript: '>=5.0.4'
@@ -1157,7 +1157,7 @@ packages:
       '@scure/bip39': 1.6.0
       abitype: 1.2.3(typescript@5.9.3)
       isows: 1.0.7(ws@8.21.0)
-      ox: 0.14.59(typescript@5.9.3)
+      ox: 0.14.63(typescript@5.9.3)
       typescript: 5.9.3
       ws: 8.21.0
     transitivePeerDependencies:
