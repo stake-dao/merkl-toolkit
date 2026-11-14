@@ -1,0 +1,17 @@
+name: Recovery baseline tests
+on:
+  pull_request:
+  push:
+    branches: [develop, 'feat/expiry-treasury-leaves']
+permissions:
+  contents: read
+jobs:
+  recovery:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --ignore-scripts --package-lock=false --no-audit --no-fund
+      - run: npx tsx src/tests/recovery_baseline.ts

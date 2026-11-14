@@ -7,7 +7,7 @@ import { MerkleData } from '../interfaces/MerkleData';
 import { utils } from "ethers";
 import MerkleTree from 'merkletreejs';
 import { Distribution } from '../interfaces/Distribution';
-import { MERKL_CONTRACT, TREASURY_ADDRESS } from '../constants';
+import { MERKL_CONTRACT, TREASURY_ADDRESS, TREASURY_FEE_RECIPIENT } from '../constants';
 import { getClient } from './rpc';
 
 /** A confirmed recovery replaces its exact parent; never silently reuse an old tree. */
@@ -15,11 +15,20 @@ export function resolveRecoveryBaseline(previous: MerkleData, activeRoot: string
     if (!/^0x[0-9a-f]{64}$/i.test(activeRoot)) throw new Error('Invalid active root');
     let result = previous;
     if (previous.merkleRoot !== activeRoot) {
-        const file = path.join(directory, `${activeRoot}.json`);
-        if (!fs.existsSync(file)) throw new Error('Active root differs from baseline: adopt the confirmed recovery or finish the pending publication first');
-        const recovery = JSON.parse(fs.readFileSync(file, 'utf8'));
-        if (recovery.sourceRoot !== previous.merkleRoot) throw new Error('Recovery parent mismatch');
-        result = recovery.merkle;
+        let root = activeRoot;
+        const seen = new Set<string>();
+        while (root !== previous.merkleRoot) {
+            if (!/^0x[0-9a-f]{64}$/i.test(root) || seen.has(root)) throw new Error('Recovery parent mismatch');
+            seen.add(root);
+            const file = path.join(directory, `${root}.json`);
+            if (!fs.existsSync(file)) throw new Error('Active root differs from baseline: adopt the confirmed recovery or finish the pending publication first');
+            const recovery = JSON.parse(fs.readFileSync(file, 'utf8'));
+            const amounts = Object.fromEntries(Object.entries(recovery.merkle.claims as MerkleData['claims']).map(([account, claim]) => [account,
+                Object.fromEntries(Object.entries(claim.tokens).map(([token, leaf]) => [token, leaf.amount]))]));
+            if (recovery.merkle.merkleRoot !== root || generateMerkleTree(amounts).merkleRoot !== root) throw new Error('Recovery baseline root mismatch');
+            if (root === activeRoot) result = recovery.merkle;
+            root = recovery.sourceRoot;
+        }
     }
     const amounts = Object.fromEntries(Object.entries(result.claims).map(([account, claim]) => [account,
         Object.fromEntries(Object.entries(claim.tokens).map(([token, leaf]) => [token, leaf.amount]))]));
@@ -181,6 +190,12 @@ export const createCombineDistribution = (
         );
     }
 
+    // Seed real zero leaves in the ordinary validated publication. Recovery
+    // cannot insert a leaf or pretend that an absent leaf has zero membership.
+    normalizedMerkleDistribution[TREASURY_FEE_RECIPIENT] ??= {};
+    for (const token of new Set(Object.values(normalizedMerkleDistribution).flatMap(tokens => Object.keys(tokens)))) {
+        normalizedMerkleDistribution[TREASURY_FEE_RECIPIENT][token] ??= '0';
+    }
     return normalizedMerkleDistribution;
 }
 
