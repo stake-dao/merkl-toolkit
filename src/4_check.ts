@@ -15,6 +15,12 @@ import fs from 'fs';
 import path from 'path';
 import { merklAbi } from './abis/Merkl';
 
+export function assertCovered(balance: bigint, amounts: { amount: bigint; claimed: bigint }[], reserved: bigint) {
+    if (reserved < 0n) throw new Error('Negative reserve');
+    const outstanding = amounts.reduce((sum, row) => sum + (row.amount > row.claimed ? row.amount - row.claimed : 0n), 0n);
+    if (balance < outstanding + reserved) throw new Error('Unfunded rewards or reserved campaign funds');
+}
+
 export const check = async () => {
     console.log("🚀 Starting verification AND simulation script (RAW RPC mode)...");
 
@@ -38,12 +44,18 @@ export const check = async () => {
 
     // 2. Client Setup
     const client = await getClient(mainnet.id);
+    const block = await client.getBlock();
+    const publicationPath = './data/last_publication.json';
+    const publication = fs.existsSync(publicationPath) ? JSON.parse(fs.readFileSync(publicationPath, 'utf8')) : undefined;
+    if (publication && publication.merkle.merkleRoot !== NEW_ROOT) throw new Error('Stale publication envelope');
+    const reserves: Record<string, string> = publication?.reserves ?? {};
 
     // 3. Check On-Chain Root
     const onChainRoot = await client.readContract({
         address: MERKL_CONTRACT,
         abi: merklAbi,
         functionName: 'root',
+        blockNumber: block.number!,
     });
 
     console.log(`\n🔍 Root Check:`);
@@ -88,7 +100,7 @@ export const check = async () => {
     console.log(`\n📊 Analyzing & Simulating ${flatClaims.length} claims across ${distinctTokens.size} tokens...`);
 
     // 5. Fetch Data (Multicall)
-    const tokenList = Array.from(distinctTokens);
+    const tokenList = Array.from(new Set([...distinctTokens, ...Object.keys(reserves).map(token => getAddress(token))]));
 
     // 5a. Fetch 'claimed' amounts for every user
     const claimedResults = await client.multicall({
@@ -97,7 +109,8 @@ export const check = async () => {
             abi: merklAbi,
             functionName: 'claimed',
             args: [c.user, c.token]
-        }))
+        })),
+        blockNumber: block.number!,
     });
 
     // 5b. Fetch Token Decimals
@@ -108,6 +121,7 @@ export const check = async () => {
             functionName: 'decimals',
             args: []
         })),
+        blockNumber: block.number!,
     });
 
     // 5c. Fetch Contract Balances (To check solvency)
@@ -117,7 +131,8 @@ export const check = async () => {
             abi: erc20Abi,
             functionName: 'balanceOf',
             args: [MERKL_CONTRACT]
-        }))
+        })),
+        blockNumber: block.number!,
     });
 
     // Process Token Info
@@ -182,7 +197,7 @@ export const check = async () => {
             console.error("----")
         }
 
-        const toDistribute = claim.totalAmount - alreadyClaimed;
+        const toDistribute = claim.totalAmount > alreadyClaimed ? claim.totalAmount - alreadyClaimed : 0n;
 
         tokenStats[claim.token].claimed += alreadyClaimed;
         tokenStats[claim.token].pending += toDistribute;
@@ -196,8 +211,8 @@ export const check = async () => {
     // Display Stats
     for (const token of tokenList) {
         const decimals = tokenInfo[token].decimals;
-        const stats = tokenStats[token];
-        const totalMerkle = merkleTotals[token];
+        const stats = tokenStats[token] ?? { claimed: 0n, pending: 0n };
+        const totalMerkle = merkleTotals[token] ?? 0n;
         const contractBalance = tokenInfo[token].balance;
 
         console.log(`Token: ${token}`);
@@ -207,12 +222,14 @@ export const check = async () => {
         console.log(`   Contract Balance:  ${formatUnits(contractBalance, decimals)}`);
 
         const debt = debtPerToken[token] || 0n;
-        const adjustedPending = stats.pending - debt;
+        const reserved = BigInt(reserves[token] ?? "0");
+        const adjustedPending = stats.pending + reserved;
 
         if (debt > 0n) {
-            console.log(`   Known Debt:        ${formatUnits(debt, decimals)}`);
-            console.log(`   Adjusted Pending:  ${formatUnits(adjustedPending, decimals)}`);
+            console.log(`   Future debt (not cash): ${formatUnits(debt, decimals)}`);
         }
+        console.log(`   Reserved campaigns: ${formatUnits(reserved, decimals)}`);
+        assertCovered(contractBalance, [{ amount: stats.pending, claimed: 0n }], reserved);
 
         if (contractBalance < adjustedPending) {
             console.error(`   ⚠️  WARNING: Contract Balance < Adjusted Pending Rewards! (Deficit: ${formatUnits(adjustedPending - contractBalance, decimals)})`);
@@ -239,7 +256,7 @@ export const check = async () => {
 
         const claimableDelta = claim.totalAmount - alreadyClaimed;
 
-        if (claimableDelta === 0n) {
+        if (claimableDelta <= 0n) {
             skippedCount++;
             continue;
         }
@@ -271,7 +288,7 @@ export const check = async () => {
                         from: claim.user,
                         data: calldata
                     },
-                    'latest',
+                    `0x${block.number!.toString(16)}`,
                     stateOverride as any
                 ]
             });
@@ -311,4 +328,5 @@ export const check = async () => {
     } else {
         console.log(`\n✨ SUCCESS: All claimable users verified via simulation.`);
     }
+    if ((await client.getBlock({ blockNumber: block.number! })).hash !== block.hash) throw new Error('Verification snapshot reorged');
 }

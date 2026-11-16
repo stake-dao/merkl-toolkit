@@ -17,6 +17,10 @@ on:
         required: false
         default: ""
 
+concurrency:
+  group: distribution-data
+  cancel-in-progress: false
+
 env:
   MORALIS_API_KEY: ${{ secrets.MORALIS_API_KEY }}
   MAINNET_RPC_URL: ${{ secrets.MAINNET_RPC_URL }}

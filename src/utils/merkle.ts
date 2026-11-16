@@ -9,6 +9,7 @@ import MerkleTree from 'merkletreejs';
 import { Distribution } from '../interfaces/Distribution';
 import { MERKL_CONTRACT, TREASURY_ADDRESS } from '../constants';
 import { getClient } from './rpc';
+import { readMonthlyJournal } from './monthlyExpiry';
 
 /** A confirmed recovery replaces its exact parent; never silently reuse an old tree. */
 export function resolveRecoveryBaseline(previous: MerkleData, activeRoot: string, directory = path.resolve(__dirname, '../../data/recoveries')): MerkleData {
@@ -31,6 +32,8 @@ export async function readActiveBaseline(previous: MerkleData): Promise<MerkleDa
     const client = await getClient(1);
     if (await client.getChainId() !== 1) throw new Error('Wrong baseline RPC chain');
     const root = await client.readContract({address: MERKL_CONTRACT, abi: parseAbi(['function root() view returns(bytes32)']), functionName: 'root'});
+    const journal = await readMonthlyJournal();
+    if (journal) return resolveRecoveryBaseline(journal.merkle, root);
     return resolveRecoveryBaseline(previous, root);
 }
 
