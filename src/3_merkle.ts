@@ -16,6 +16,7 @@ import {
 } from "./utils/merkle";
 import { MerkleData } from "./interfaces/MerkleData";
 import { safeStringify } from "./utils/parse";
+import { carryUnpublished, prepareMonthlyPublication, readMonthlyJournal } from "./utils/monthlyExpiry";
 
 export const generateMerkle = async () => {
     console.log("🔄 Starting merkle generation...");
@@ -65,9 +66,10 @@ export const generateMerkle = async () => {
     }
 
     console.log("➕ Combining distributions...");
+    const journal = await readMonthlyJournal();
     const distributionCombined = createCombineDistribution(
         currentDistribution,
-        merkle,
+        journal ? { merkleRoot: "", claims: {} } : merkle,
         debts
     );
 
@@ -84,7 +86,12 @@ export const generateMerkle = async () => {
     }
 
     console.log("🌳 Generating merkle tree...");
-    const merkleData = generateMerkleTree(distributionCombined);
+    const publicationPath = path.resolve(__dirname, "../data/last_publication.json");
+    const previous = fs.existsSync(publicationPath) ? JSON.parse(fs.readFileSync(publicationPath, "utf8")) : undefined;
+    const batch = journal ? carryUnpublished(journal, distributionCombined, currentDistribution.incentives, `extra:${currentDistribution.timestamp}`, previous) : undefined;
+    const publication = journal && batch ? await prepareMonthlyPublication(journal, batch.gains, batch.allocations, batch.sources) : undefined;
+    const merkleData = publication?.merkle ?? generateMerkleTree(distributionCombined);
+    if (publication) fs.writeFileSync(publicationPath, safeStringify(publication));
     console.log(`✅ Merkle root generated: ${merkleData.merkleRoot}`);
 
     console.log("🔑 Normalizing addresses...");
