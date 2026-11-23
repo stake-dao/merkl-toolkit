@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { getAddress, parseAbi, PublicClient, zeroHash, zeroAddress } from "viem";
+import repair from "../../config/campaign-supersession.json";
 import { MERKL_CONTRACT } from "../constants";
 import { MerkleData } from "../interfaces/MerkleData";
 import { UniversalMerkle } from "../interfaces/UniversalMerkle";
@@ -9,6 +11,7 @@ import { Distribution } from "../interfaces/Distribution";
 import { getClient } from "./rpc";
 import { merklAbi } from "../abis/Merkl";
 import { generateMerkleTree } from "./merkle";
+import { safeStringify } from "./parse";
 
 const TREASURY = "0x9EBBb3d59d53D6aD3FA5464f36c2E84aBb7cf5c1";
 const ABI = parseAbi(["function root() view returns(bytes32)", "function pendingRoot() view returns(bytes32,bytes32,uint256)", "function claimed(address,address) view returns(uint256)"]);
@@ -31,7 +34,7 @@ export async function readMonthlyJournal(): Promise<MonthlyJournal | undefined> 
     if (response.status === 404) return;
     assert(response.ok, "monthly publication journal unavailable");
     const state = await response.json() as MonthlyJournal;
-    assert(state.version === 1 && state.pool === "extra-1" && state.ledger.chainId === 1 && state.ledger.distributor === MERKL_CONTRACT, "monthly journal target mismatch");
+    assert(state.version === 1 && state.pool === "extra-1" && state.ledger.chainId === 1 && getAddress(state.ledger.distributor) === getAddress(MERKL_CONTRACT), "monthly journal target mismatch");
     assert(!state.publication && !state.execution && !state.cancelRequested && !state.cancelled, "monthly publication requires reconciliation");
     assert.equal(state.merkle.merkleRoot, state.ledger.root, "monthly active artifact mismatch");
     return state;
@@ -49,22 +52,38 @@ export async function campaignReserves(client: PublicClient, blockNumber: bigint
         const rows = await client.multicall({ contracts: ids.map(id => ({ address: MERKL_CONTRACT, abi: merklAbi, functionName: "incentives" as const, args: [BigInt(id)] })), blockNumber, allowFailure: false, authorizationList: undefined });
         rows.forEach((row, i) => { incentives.push({ id: ids[i], reward: getAddress(row[1]), amount: row[7] }); });
     }
+    // Only these reviewed (archive, campaign) pairs were recalculated. The
+    // commit in the manifest pins their gauge windows; verify both sides' Git
+    // blob IDs against the very distribution bytes used for accounting below.
+    const required = blockNumber >= BigInt(repair.replacement.blockNumber)
+        ? [...repair.sources, { ...repair.replacement, campaigns: [] as number[] }] : [];
+    const pending = new Map(required.map(entry => [String(entry.timestamp), entry]));
     const allocated = new Map<number, bigint>();
     for (const folder of fs.readdirSync(directory).filter(name => /^\d+$/.test(name))) {
         const file = path.join(directory, folder, "distribution.json");
-        if (!fs.existsSync(file)) continue;
-        const distribution: Distribution = JSON.parse(fs.readFileSync(file, "utf8"));
+        const bytes = fs.readFileSync(file);
+        const entry = pending.get(folder);
+        if (entry) {
+            const blob = createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
+            assert.equal(blob, entry.distributionBlob, `campaign supersession archive changed: ${folder}`);
+            pending.delete(folder);
+        }
+        const distribution: Distribution = JSON.parse(bytes.toString("utf8"));
+        assert(String(distribution.timestamp) === folder && BigInt(distribution.blockNumber) <= blockNumber, `invalid archive checkpoint: ${folder}`);
         for (const row of distribution.incentives) {
-            assert(incentives.some(i => i.id === row.distribution.incentiveId && getAddress(i.reward) === getAddress(row.token.address)), "unknown campaign allocation");
-            const amount = row.users.reduce((sum, user) => { assert(/^\d+$/.test(user.amount)); return sum + BigInt(user.amount); }, 0n);
-            allocated.set(row.distribution.incentiveId, (allocated.get(row.distribution.incentiveId) ?? 0n) + amount);
+            const id = row.distribution.incentiveId;
+            assert(incentives[id]?.id === id && incentives[id].reward === getAddress(row.token.address), `unknown campaign allocation: ${folder}/${id}`);
+            const amount = row.users.reduce((sum, user) => { assert(typeof user.amount === "string" && /^\d+$/.test(user.amount)); return sum + BigInt(user.amount); }, 0n);
+            assert.equal(amount, BigInt(row.distribution.amountToDistribute), `campaign allocation sum mismatch: ${folder}/${id}`);
+            if (!entry?.campaigns.includes(id)) allocated.set(id, (allocated.get(id) ?? 0n) + amount);
         }
     }
+    assert(!pending.size, `missing campaign supersession archives: ${[...pending.keys()].join(", ")}`);
     const reserves: Record<string, string> = {};
     for (const incentive of incentives) {
-        if (incentive.reward === zeroAddress && incentive.amount === 0n) continue;
         const remaining = BigInt(incentive.amount) - (allocated.get(incentive.id) ?? 0n);
-        assert(remaining >= 0n, "campaign allocations exceed funding");
+        assert(remaining >= 0n, `campaign ${incentive.id} allocations exceed funding by ${-remaining}`);
+        if (incentive.reward === zeroAddress && incentive.amount === 0n) continue;
         const token = getAddress(incentive.reward);
         reserves[token] = (BigInt(reserves[token] ?? "0") + remaining).toString();
     }
@@ -103,6 +122,19 @@ export async function prepareMonthlyPublication(state: MonthlyJournal, gains: Un
     const merkle = generateMerkleTree(amounts);
     assert.equal((await client.getBlock({ blockNumber: block.number! })).hash, block.hash, "publication snapshot reorged");
     return { version: 1, pool: "extra-1", revision: state.revision, kind: state.adopted ? "settlement" : "ordinary", parent: state.ledger.root, merkle, gains, allocations, sources, reserves, campaignCount, checkpoint: { block: Number(block.number), blockHash: block.hash! }, ipfsHash: zeroHash };
+}
+
+/** Publish immutable proofs alongside the candidate, in the same data commit. */
+export function writeMonthlyPublication(publication: Awaited<ReturnType<typeof prepareMonthlyPublication>>, directory = path.resolve(__dirname, "../../data")) {
+    const root = publication.merkle.merkleRoot.toLowerCase();
+    assert.match(root, /^0x[0-9a-f]{64}$/);
+    const roots = path.join(directory, "monthly-expiry", "roots");
+    fs.mkdirSync(roots, { recursive: true });
+    const file = path.join(roots, `${root}.json`);
+    const proof = safeStringify(publication.merkle);
+    if (fs.existsSync(file)) assert(fs.readFileSync(file, "utf8") === proof, `conflicting proofs for ${root}`);
+    else fs.writeFileSync(file, proof, { flag: "wx" });
+    fs.writeFileSync(path.join(directory, "last_publication.json"), safeStringify(publication));
 }
 
 /** Generation is not activation. Retain unsubmitted gains when a cut or a

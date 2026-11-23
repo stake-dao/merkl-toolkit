@@ -16,7 +16,7 @@ import {
 } from "./utils/merkle";
 import { MerkleData } from "./interfaces/MerkleData";
 import { safeStringify } from "./utils/parse";
-import { carryUnpublished, prepareMonthlyPublication, readMonthlyJournal } from "./utils/monthlyExpiry";
+import { carryUnpublished, prepareMonthlyPublication, readMonthlyJournal, writeMonthlyPublication } from "./utils/monthlyExpiry";
 
 export const generateMerkle = async () => {
     console.log("🔄 Starting merkle generation...");
@@ -91,7 +91,6 @@ export const generateMerkle = async () => {
     const batch = journal ? carryUnpublished(journal, distributionCombined, currentDistribution.incentives, `extra:${currentDistribution.timestamp}`, previous) : undefined;
     const publication = journal && batch ? await prepareMonthlyPublication(journal, batch.gains, batch.allocations, batch.sources) : undefined;
     const merkleData = publication?.merkle ?? generateMerkleTree(distributionCombined);
-    if (publication) fs.writeFileSync(publicationPath, safeStringify(publication));
     console.log(`✅ Merkle root generated: ${merkleData.merkleRoot}`);
 
     console.log("🔑 Normalizing addresses...");
@@ -106,6 +105,7 @@ export const generateMerkle = async () => {
     );
 
     console.log("💾 Saving merkle file...");
+    if (publication) writeMonthlyPublication(publication);
     writeMerkle(currentDistribution.timestamp, merkleData);
     console.log("✅ Merkle file saved");
 

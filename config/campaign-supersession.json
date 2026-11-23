@@ -1,0 +1,17 @@
+{
+  "repairCommit": "3df57923bdf0529113018f69d69373ca4ab6b8f1",
+  "archiveCommit": "49ccaccf780a0d3f1cb5a5b0b1c8e365c062a0d1",
+  "replacement": { "timestamp": 1771914645, "blockNumber": 24527595, "distributionBlob": "3f6bd49650bc22ea36d77959aae9d7be6bc1f0be" },
+  "sources": [
+    { "timestamp": 1771720463, "distributionBlob": "6a9c914557daa8419dcb6bb1ab427e6dc22122a8", "campaigns": [115,116,117,118,119,120,121,127,128,129,130,134,135,136] },
+    { "timestamp": 1771741199, "distributionBlob": "1de7b5c35819afe4079dc85d8e33901563731f6e", "campaigns": [115,116,117,118,119,120,121,127,128,129,130] },
+    { "timestamp": 1771762319, "distributionBlob": "8afa6dae86f0115ee8b142fbfb0b174af69e2ddd", "campaigns": [115,116,117,118,119,120,121,127,128,129,130] },
+    { "timestamp": 1771783847, "distributionBlob": "3f8b4f4c2719ba5f8625dcb3facc8ca01287d278", "campaigns": [115,116,117,118,119,120,121,127,128,129,130,137,138,139] },
+    { "timestamp": 1771806899, "distributionBlob": "4bbdabc02b6bd8e9b9f9654b5d4d7bdcbfa98fd6", "campaigns": [115,116,117,118,119,120,121,127,128,129,130] },
+    { "timestamp": 1771828223, "distributionBlob": "f2b3fca8f4dbcce914150497ecc652cdcee5e738", "campaigns": [115,116,117,118,119,120,121,127,128,129,130] },
+    { "timestamp": 1771849151, "distributionBlob": "ee470152c1e8b56e35298851d9dfd169842c8849", "campaigns": [115,116,117,118,119,120,121,127,128,129,130] },
+    { "timestamp": 1771879091, "distributionBlob": "2c5382bc473e0481136b69bb6828e791a8a38f3e", "campaigns": [115,116,117,118,119,120,121,127,128,129,130] },
+    { "timestamp": 1771893167, "distributionBlob": "438c6b5c0426a7f946071611f8268815e08a6376", "campaigns": [115,116,117,118,119,120,121,127,128,129,130] },
+    { "timestamp": 1771914407, "distributionBlob": "55e57d74c241b9e7db5a478c1c9d27cbac73f061", "campaigns": [115,116,117,118,119,120,121,127,128,129,130] }
+  ]
+}
