@@ -139,12 +139,11 @@ Après la répartition Morpho, le toolkit attribue l’intégralité de la part 
 
 ### Correction historique DOLA/swanUSD (ENG-2308)
 
-L’incentive 2601 avait attribué 36,666666666666441888 DOLA à l’escrow. Le distributeur autorise quiconque à présenter son ancienne preuve tant que la racine correspondante est active. Le workflow génère deux distributions de correction consécutives avec la liste d’incentives vide. L’index identifie leur étape dans le champ optionnel `firmRecovery`. Les curseurs de distribution restent à leur valeur précédente pendant ces deux étapes.
+L’incentive 2601 avait attribué 36,666666666666441888 DOLA à l’escrow `0x4b460CF00679cd0291048c75Ca4C63d3ae830630`. Au début du run, le toolkit compare la racine active à celle de la distribution à corriger, `0x82a64ef5a697cf29bf5a620865c58a599c3ee3c361c5508dec55dd2a555b17cf`. Si elle correspond et que l’escrow a encore la totalité de son droit à réclamer, il déplace ce montant dans le cumul de `0x80C67fe70d7D6cC488782439fad381d8646640c4` en mémoire. Il ajoute ensuite les récompenses du run avec le calcul habituel. Un seul Merkle est exporté, y compris si la réattribution est le seul changement du run.
 
-1. Le premier passage retire uniquement le droit de l’escrow. Le mécanisme de publication habituel active cette racine.
-2. Le passage suivant vérifie la racine de retrait et le montant déjà payé au même bloc Ethereum finalisé. Si le montant est nul, il réattribue la somme exacte à l’emprunteur, corrige la ligne historique et son cache de breakdown. Le total par token de la racine finale est identique à celui de la racine d’origine. Si l’ancien droit a déjà été payé en totalité, le pipeline conserve ou rétablit son cumul sous l’escrow et reprend les distributions courantes.
+La nouvelle distribution référence la racine d’origine dans `firmRecovery.sourceRoot`. L’historique des gains et le cache du breakdown attribuent la ligne 2601 au borrower. Les Merkle horodatés déjà publiés restent disponibles pour audit. La condition sur la racine parente empêche d’appliquer la réattribution deux fois.
 
-Les Merkle publiés avant la correction restent disponibles dans leurs répertoires horodatés. Les distributions ordinaires reprennent à partir de la racine confirmée. `pnpm test:firm` exerce la découverte des marchés, la réattribution et les étapes de publication.
+Tant que l’ancienne racine est active, un tiers peut présenter la preuve de l’escrow. Les lectures de `claimed(escrow, DOLA)` du toolkit ne couvrent que la période de génération. La publication on-chain est exécutée par un job distinct.
 
 ## Etape 2 - Distribution (calcul TWAB)
 

@@ -2,7 +2,7 @@ import path from 'path';
 import fs from 'fs';
 import { safeParse, safeStringify } from './parse';
 import { UniversalMerkle } from '../interfaces/UniversalMerkle';
-import { getAddress, keccak256, parseAbi, type PublicClient } from 'viem';
+import { getAddress, keccak256, parseAbi } from 'viem';
 import { MerkleData } from '../interfaces/MerkleData';
 import { utils } from "ethers";
 import MerkleTree from 'merkletreejs';
@@ -21,24 +21,17 @@ export function resolveRecoveryBaseline(previous: MerkleData, activeRoot: string
         if (recovery.sourceRoot !== previous.merkleRoot) throw new Error('Recovery parent mismatch');
         result = recovery.merkle;
     }
-    if (result.merkleRoot !== activeRoot || rebuildMerkleClaims(result).merkleRoot !== activeRoot) throw new Error('Recovery baseline root mismatch');
+    const amounts = Object.fromEntries(Object.entries(result.claims).map(([account, claim]) => [account,
+        Object.fromEntries(Object.entries(claim.tokens).map(([token, leaf]) => [token, leaf.amount]))]));
+    if (result.merkleRoot !== activeRoot || generateMerkleTree(amounts).merkleRoot !== activeRoot) throw new Error('Recovery baseline root mismatch');
     return result;
 }
 
-export function rebuildMerkleClaims(tree: MerkleData): MerkleData {
-    const amounts = Object.fromEntries(Object.entries(tree.claims).map(([account, claim]) => [account,
-        Object.fromEntries(Object.entries(claim.tokens).map(([token, leaf]) => [token, leaf.amount]))]));
-    return generateMerkleTree(amounts);
-}
-
-export async function readActiveRoot(client: Pick<PublicClient, "getChainId" | "readContract">) {
-    if (await client.getChainId() !== 1) throw new Error('Wrong baseline RPC chain');
-    return client.readContract({ address: MERKL_CONTRACT, abi: parseAbi(['function root() view returns(bytes32)']),
-        functionName: 'root', authorizationList: undefined });
-}
-
 export async function readActiveBaseline(previous: MerkleData): Promise<MerkleData> {
-    return resolveRecoveryBaseline(previous, await readActiveRoot(await getClient(1)));
+    const client = await getClient(1);
+    if (await client.getChainId() !== 1) throw new Error('Wrong baseline RPC chain');
+    const root = await client.readContract({address: MERKL_CONTRACT, abi: parseAbi(['function root() view returns(bytes32)']), functionName: 'root'});
+    return resolveRecoveryBaseline(previous, root);
 }
 
 const getMerklePath = (timestamp: number): string => {

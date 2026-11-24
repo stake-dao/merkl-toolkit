@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { Distribution } from "../interfaces/Distribution";
 import type { SerializedEarnedEntry } from "../interfaces/Breakdown";
 import type { MerkleData } from "../interfaces/MerkleData";
-import { buildFirmRecoveryTrees, FIRM_RECOVERY, repairFirmDistribution, repairFirmEarned } from "../recovery/firm";
-import { generateMerkleTree } from "../utils/merkle";
-import { safeParse, safeStringify } from "../utils/parse";
+import { reassignFirmBalance, FIRM_RECOVERY, repairFirmDistribution, repairFirmEarned } from "../recovery/firm";
+import { createCombineDistribution } from "../utils/merkle";
+import { safeParse } from "../utils/parse";
 
 const r = FIRM_RECOVERY;
-const otherToken = "0x1111111111111111111111111111111111111111";
 const otherUser = "0x2222222222222222222222222222222222222222";
 const window: Distribution = {
     timestamp: r.timestamp, blockNumber: r.blockNumber,
@@ -52,41 +53,45 @@ assert.throws(() => repairFirmEarned({ [fromKey]: [earning], [toKey]: [firmEarni
 assert.throws(() => repairFirmEarned({ [toKey]: [earning] }, r.timestamp), /ambiguous/);
 assert.throws(() => repairFirmEarned({ [toKey]: [{ ...firmEarning, amount: r.amount - 1n }] }, r.timestamp), /ambiguous/);
 
-const original = generateMerkleTree({
-    [r.escrow]: { [otherToken]: "12", [r.token]: r.amount.toString() },
-    [r.beneficiary]: { [r.token]: "44", [otherToken]: "13" },
-    [otherUser]: { [r.token]: "33" },
-});
-const originalJson = JSON.stringify(original);
-const { withdrawn, credited } = buildFirmRecoveryTrees(original, window, 0n);
-function totalDola(tree: MerkleData): bigint {
-    return Object.values(tree.claims).reduce((sum, claim) => sum + BigInt(claim.tokens[r.token]?.amount ?? 0), 0n);
-}
-assert.equal(totalDola(withdrawn), totalDola(original) - r.amount);
-assert.equal(totalDola(credited), totalDola(original));
-assert.equal(withdrawn.claims[r.beneficiary].tokens[r.token].amount, "44");
-assert.equal(credited.claims[r.beneficiary].tokens[r.token].amount, (44n + r.amount).toString());
-for (const stage of [withdrawn, credited]) {
-    assert.equal(stage.claims[r.escrow].tokens[r.token], undefined);
-    assert.equal(stage.claims[r.escrow].tokens[otherToken].amount, "12");
-    assert.equal(stage.claims[r.beneficiary].tokens[otherToken].amount, "13");
-    assert.equal(stage.claims[otherUser].tokens[r.token].amount, "33");
-    assert.notEqual(stage.merkleRoot, original.merkleRoot);
-}
-assert.notEqual(withdrawn.merkleRoot, credited.merkleRoot);
-assert.equal(JSON.stringify(original), originalJson);
-assert.deepEqual(buildFirmRecoveryTrees(safeParse(originalJson), safeParse(safeStringify(repaired)), 0n), { withdrawn, credited });
-assert.throws(() => buildFirmRecoveryTrees(credited, repaired, 0n), /escrow cumulative/);
-assert.throws(() => buildFirmRecoveryTrees(withdrawn, window, 0n), /escrow cumulative/);
-assert.throws(() => buildFirmRecoveryTrees(original, window, 1n), /already been claimed/);
-assert.throws(() => buildFirmRecoveryTrees({ ...original, merkleRoot: credited.merkleRoot }, window, 0n), /source root/);
-const excess = generateMerkleTree({ [r.escrow]: { [r.token]: (r.amount + 1n).toString() } });
-assert.throws(() => buildFirmRecoveryTrees(excess, window, 0n), /escrow cumulative/);
+// The archived parent is immutable even after newer rounds have been generated.
+const snapshots = path.resolve(__dirname, "../../data/distributions");
+const originalJson = readFileSync(path.join(snapshots, "1795521683/merkle.json"), "utf8");
+const original: MerkleData = JSON.parse(originalJson);
+const history: Distribution = safeParse(readFileSync(path.join(snapshots, String(r.timestamp), "distribution.json"), "utf8"));
+assert.equal(original.merkleRoot, r.parentRoot);
+assert.equal(original.claims[r.escrow].tokens[r.token].amount, "36666666666666441888");
+assert.equal(original.claims[r.beneficiary]?.tokens[r.token], undefined);
 
-// The affected historical snapshots have no previous DOLA entry for the borrower.
-const noBorrower = generateMerkleTree({ [r.escrow]: { [r.token]: r.amount.toString() }, [otherUser]: { [r.token]: "1" } });
-const stages = buildFirmRecoveryTrees(noBorrower, window, 0n);
-assert.equal(stages.withdrawn.claims[r.escrow], undefined);
-assert.equal(stages.withdrawn.claims[r.beneficiary], undefined);
-assert.equal(stages.credited.claims[r.beneficiary].tokens[r.token].amount, r.amount.toString());
-console.log("PASS: both FiRM recovery stages preserve unrelated entitlements and reject claimed, ambiguous and repeated corrections");
+const corrected = reassignFirmBalance(original, history, 0n);
+assert.equal(corrected.merkleRoot, "0x6aa852437ce487180adaa33c0a12b8c6601d6b814d5475e67b8333ab0a012fe6");
+assert.equal(JSON.stringify(original), originalJson.trim());
+function amounts(tree: MerkleData): Map<string, bigint> {
+    const pairs = new Map<string, bigint>();
+    for (const [user, claim] of Object.entries(tree.claims)) {
+        for (const [token, leaf] of Object.entries(claim.tokens)) pairs.set(`${user}-${token}`, BigInt(leaf.amount));
+    }
+    return pairs;
+}
+const expected = amounts(original);
+assert.equal(expected.size, 2751);
+assert.equal(expected.delete(fromKey), true);
+expected.set(toKey, r.amount);
+assert.deepEqual(amounts(corrected), expected);
+assert.equal(reassignFirmBalance(safeParse(originalJson), repairFirmDistribution(history), 0n).merkleRoot, corrected.merkleRoot);
+assert.throws(() => reassignFirmBalance(corrected, history, 0n), /original published root/);
+assert.throws(() => reassignFirmBalance(original, history, r.amount), /already been claimed/);
+assert.throws(() => reassignFirmBalance(original, history, 1n), /already been claimed/);
+assert.throws(() => reassignFirmBalance({ ...original, claims: {} }, history, 0n), /source root/);
+assert.throws(() => reassignFirmBalance(original, { ...history, incentives: [] }, 0n), /historical distribution/);
+
+// A regular round on this parent credits the borrower with both historical and new DOLA.
+const newRewards: Distribution = {
+    timestamp: r.timestamp + 100000, blockNumber: r.blockNumber + 10000, incentives: [{
+        ...entry, distribution: { incentiveId: 9999, amountToDistribute: 7n, incentivePerSecond: 1n },
+        users: [{ user: r.beneficiary, amount: "7", share: "100.000000", balance: "1" }],
+    }],
+};
+const next = createCombineDistribution(newRewards, corrected);
+assert.equal(next[r.beneficiary][r.token], (r.amount + 7n).toString());
+assert.equal(next[r.escrow]?.[r.token], undefined);
+console.log("PASS: the published #2601 parent is corrected once, preserves all other pairs and combines with regular rewards");

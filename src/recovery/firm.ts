@@ -7,6 +7,7 @@ import { generateMerkleTree } from "../utils/merkle";
 
 // The only DOLA/swanUSD distribution credited to this FiRM escrow before borrower routing.
 export const FIRM_RECOVERY = {
+    parentRoot: "0x82a64ef5a697cf29bf5a620865c58a599c3ee3c361c5508dec55dd2a555b17cf",
     timestamp: 1795456871,
     blockNumber: 26479491,
     incentiveId: 2601,
@@ -91,12 +92,15 @@ export function repairFirmEarned(entries: Record<string, SerializedEarnedEntry[]
     return repaired;
 }
 
-function balancesAfterWithdrawal(merkle: MerkleData, historicalDistribution: Distribution): UniversalMerkle {
-    const { token, escrow, amount } = FIRM_RECOVERY;
-    recoveryIncentive(historicalDistribution);
+/** Correct the historical FiRM recipient on its exact published parent before adding new rewards. */
+export function reassignFirmBalance(original: MerkleData, history: Distribution, claimed: bigint): MerkleData {
+    const { parentRoot, token, escrow, beneficiary, amount } = FIRM_RECOVERY;
+    if (original.merkleRoot !== parentRoot) throw new Error("FiRM recovery requires its original published root");
+    if (claimed !== 0n) throw new Error("FiRM escrow DOLA has already been claimed");
+    recoveryIncentive(history);
 
     const balances: UniversalMerkle = {};
-    for (const [account, claim] of Object.entries(merkle.claims)) {
+    for (const [account, claim] of Object.entries(original.claims)) {
         const user = getAddress(account);
         if (balances[user]) throw new Error("Duplicate account in FiRM recovery source tree");
         balances[user] = {};
@@ -106,7 +110,7 @@ function balancesAfterWithdrawal(merkle: MerkleData, historicalDistribution: Dis
             balances[user][reward] = BigInt(leaf.amount).toString();
         }
     }
-    if (generateMerkleTree(balances).merkleRoot !== merkle.merkleRoot) {
+    if (generateMerkleTree(balances).merkleRoot !== parentRoot) {
         throw new Error("FiRM recovery source root does not match its claims");
     }
 
@@ -117,20 +121,7 @@ function balancesAfterWithdrawal(merkle: MerkleData, historicalDistribution: Dis
 
     delete balances[escrow][token];
     if (Object.keys(balances[escrow]).length === 0) delete balances[escrow];
-    return balances;
-}
-
-export function buildFirmWithdrawal(merkle: MerkleData, history: Distribution): MerkleData {
-    return generateMerkleTree(balancesAfterWithdrawal(merkle, history));
-}
-
-/** Both trees derive from the original parent. Credit is eligible only after the withdrawal is final. */
-export function buildFirmRecoveryTrees(merkle: MerkleData, history: Distribution, claimed: bigint) {
-    if (claimed !== 0n) throw new Error("FiRM escrow DOLA has already been claimed");
-    const { beneficiary, token, amount } = FIRM_RECOVERY;
-    const balances = balancesAfterWithdrawal(merkle, history);
-    const withdrawn = generateMerkleTree(balances);
     balances[beneficiary] ??= {};
     balances[beneficiary][token] = (BigInt(balances[beneficiary][token] ?? "0") + amount).toString();
-    return { withdrawn, credited: generateMerkleTree(balances) };
+    return generateMerkleTree(balances);
 }

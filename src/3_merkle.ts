@@ -16,10 +16,12 @@ import {
 } from "./utils/merkle";
 import { MerkleData } from "./interfaces/MerkleData";
 import { safeStringify } from "./utils/parse";
+import type { PreparedFirmRecovery } from "./recovery/firm_round";
 
-export const generateMerkle = async () => {
+export const generateMerkle = async (expectedParentRoot?: string, recovery?: PreparedFirmRecovery) => {
     console.log("🔄 Starting merkle generation...");
 
+    recovery?.ensurePendingRound();
     const distributionsData = getLastDistributionsData();
     console.log(`📂 Found ${distributionsData.length} distributions`);
 
@@ -31,6 +33,9 @@ export const generateMerkle = async () => {
     if (!lastDistributionData) {
         console.log("✅ No pending distribution found");
         return;
+    }
+    if (lastDistributionData !== distributionsData[distributionsData.length - 1]) {
+        throw new Error("Pending Merkle distribution must be the last indexed round");
     }
 
     console.log(
@@ -46,11 +51,22 @@ export const generateMerkle = async () => {
         console.log(
             `📖 Loading previous merkle (timestamp ${previousDistributionData.timestamp})...`
         );
+        if (recovery && (lastDistributionData.timestamp <= previousDistributionData.timestamp ||
+            lastDistributionData.blockNumber <= previousDistributionData.blockNumber)) {
+            throw new Error("Pending Merkle distribution must follow its parent block and timestamp");
+        }
         merkle = await readActiveBaseline(getMerkle(previousDistributionData.timestamp));
     }
+    if (distributionsData.length > 1 && expectedParentRoot !== undefined && expectedParentRoot !== merkle.merkleRoot) {
+        throw new Error("Active distribution parent changed since preflight");
+    }
+    if (recovery && recovery.sourceRoot !== merkle.merkleRoot) throw new Error("FiRM recovery parent mismatch");
 
     console.log("📝 Loading current distribution...");
     const currentDistribution = getDistribution(lastDistributionData.timestamp);
+    if (recovery && (currentDistribution.timestamp !== lastDistributionData.timestamp || currentDistribution.blockNumber !== lastDistributionData.blockNumber)) {
+        throw new Error("Pending distribution block or timestamp differs from its index");
+    }
     console.log(
         `✅ Distribution loaded with ${currentDistribution.incentives.length} incentives`
     );
@@ -67,21 +83,9 @@ export const generateMerkle = async () => {
     console.log("➕ Combining distributions...");
     const distributionCombined = createCombineDistribution(
         currentDistribution,
-        merkle,
+        recovery?.baseline ?? merkle,
         debts
     );
-
-    // Save updated debts
-    if (debts) {
-        const remainingDebtors = Object.keys(debts).length;
-        if (remainingDebtors === 0) {
-            fs.unlinkSync(debtsPath);
-            console.log("✅ All debts fully repaid — removed debts.json");
-        } else {
-            fs.writeFileSync(debtsPath, safeStringify(debts), { encoding: "utf-8" });
-            console.log(`💾 Updated debts.json — ${remainingDebtors} users still indebted`);
-        }
-    }
 
     console.log("🌳 Generating merkle tree...");
     const merkleData = generateMerkleTree(distributionCombined);
@@ -98,10 +102,20 @@ export const generateMerkle = async () => {
         `✅ Normalized ${Object.keys(merkleData.claims).length} addresses`
     );
 
+    await recovery?.confirmUnclaimed();
     console.log("💾 Saving merkle file...");
     writeMerkle(currentDistribution.timestamp, merkleData);
     console.log("✅ Merkle file saved");
 
+    if (debts) {
+        if (Object.keys(debts).length === 0) fs.unlinkSync(debtsPath);
+        else fs.writeFileSync(debtsPath, safeStringify(debts), { encoding: "utf-8" });
+    }
+
+    if (recovery) {
+        recovery.repairHistory();
+        lastDistributionData.firmRecovery = { sourceRoot: recovery.sourceRoot };
+    }
     // tag the distribution as sent onchain
     lastDistributionData.sentOnchain = true;
     overideDistributionData(distributionsData);
