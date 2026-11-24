@@ -131,6 +131,20 @@ Fonction `getIncentiveSource(sender)` dans `utils/merkl.ts` :
 
 ---
 
+## Escrows FiRM sur Ethereum
+
+Le contrat DBR d’Inverse (`0xAD038Eb671c44b853887A7E32528FaB35dC5D710`) annonce les marchés via `AddMarket`. Le toolkit indexe leurs événements `CreateEscrow`, y compris les escrows créés avant l’inscription du marché, et vérifie chaque relation avec `market.escrows(borrower)`. Le cache `data/holders/firm/index.json` conserve le bloc et son hash pour permettre les mises à jour incrémentales. Les nouveaux marchés Ethereum qui utilisent cette interface sont pris en compte dès leur inscription.
+
+Après la répartition Morpho, le toolkit attribue l’intégralité de la part pondérée de chaque escrow à son emprunteur. Une seule adresse peut ainsi cumuler une détention directe et plusieurs escrows. Le snapshot du gauge conserve les détenteurs physiques. La distribution et le breakdown indiquent les bénéficiaires.
+
+### Correction historique DOLA/swanUSD (ENG-2308)
+
+L’incentive 2601 avait attribué 36,666666666666441888 DOLA à l’escrow `0x4b460CF00679cd0291048c75Ca4C63d3ae830630`. Au début du run, le toolkit compare la racine active à celle de la distribution à corriger, `0x82a64ef5a697cf29bf5a620865c58a599c3ee3c361c5508dec55dd2a555b17cf`. Si elle correspond et que l’escrow a encore la totalité de son droit à réclamer, il déplace ce montant dans le cumul de `0x80C67fe70d7D6cC488782439fad381d8646640c4` en mémoire. Il ajoute ensuite les récompenses du run avec le calcul habituel. Un seul Merkle est exporté, y compris si la réattribution est le seul changement du run.
+
+La nouvelle distribution référence la racine d’origine dans `firmRecovery.sourceRoot`. L’historique des gains et le cache du breakdown attribuent la ligne 2601 au borrower. Les Merkle horodatés déjà publiés restent disponibles pour audit. La condition sur la racine parente empêche d’appliquer la réattribution deux fois.
+
+Tant que l’ancienne racine est active, un tiers peut présenter la preuve de l’escrow. Les lectures de `claimed(escrow, DOLA)` du toolkit ne couvrent que la période de génération. La publication on-chain est exécutée par un job distinct.
+
 ## Etape 2 - Distribution (calcul TWAB)
 
 **Fichiers** : `2_distribution.ts`, `utils/twab.ts`, `utils/chain.ts`, `utils/token.ts`, `utils/tokenHolderScanner.ts`, `integrations/expand.ts`

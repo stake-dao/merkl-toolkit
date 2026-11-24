@@ -5,8 +5,8 @@ import { mainnet } from "viem/chains";
 import { getClient } from "./utils/rpc";
 import { getDistribution } from "./utils/distribution";
 import { getLastDistributionsData } from "./utils/distributionData";
-import { readMeta, writeMeta, emptyMeta, readEarnedEntries, writeEarnedEntries, readClaimEvents, writeClaimEvents, writeBreakdown } from "./utils/breakdown";
-import { Breakdown, VaultTokenBreakdown, ProductType, EarnedSource, SerializedEarnedEntry, SerializedClaimEvent } from "./interfaces/Breakdown";
+import { readMeta, writeMeta, emptyMeta, readEarnedEntries, writeEarnedEntries, readClaimEvents, writeClaimEvents, writeBreakdown, earnedPortions, describeSources } from "./utils/breakdown";
+import { Breakdown, VaultTokenBreakdown, EarnedSource, SerializedEarnedEntry, SerializedClaimEvent } from "./interfaces/Breakdown";
 import { MERKL_CONTRACT } from "./constants";
 import { merklAbi } from "./abis/Merkl";
 import { MerkleData } from "./interfaces/MerkleData";
@@ -130,23 +130,9 @@ const accumulateNewDistributions = (
                 const key = `${addr}-${token}`;
                 if (!entries[key]) entries[key] = [];
 
-                // Determine source: explicit field (new files) or heuristic (old files)
-                let source: EarnedSource;
-                if (user.source) {
-                    source = user.source;
-                } else {
-                    // Old file: balance == 0 + in Morpho cache → morpho
-                    const isZeroBalance = BigInt(user.balance) === 0n;
-                    const isMorphoDepositor = morphoDepositors.has(addr.toLowerCase());
-                    source = isZeroBalance && isMorphoDepositor ? "morpho" : "direct";
+                for (const portion of earnedPortions(user, morphoDepositors)) {
+                    entries[key].push({ timestamp: dist.timestamp, vault, ...portion });
                 }
-
-                entries[key].push({
-                    timestamp: dist.timestamp,
-                    vault,
-                    amount: BigInt(user.amount),
-                    source,
-                });
             }
         }
     }
@@ -406,16 +392,11 @@ const processUserToken = (
         }
         allocatedClaimable += claimable;
 
-        const sources = vaultSources.get(vault);
-        const productType: ProductType = sources?.has("direct") && sources?.has("morpho")
-            ? "both"
-            : sources?.has("morpho") ? "morpho" : "direct";
-
         result.set(vault, {
             earned: earned.toString(),
             claimed: claimed.toString(),
             claimable: claimable.toString(),
-            type: productType,
+            ...describeSources(vaultSources.get(vault)!),
         });
     }
 

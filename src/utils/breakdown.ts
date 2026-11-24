@@ -1,7 +1,9 @@
 import path from 'path';
 import fs from 'fs';
 import { safeParse, safeStringify } from './parse';
-import { Breakdown, BreakdownMeta, SerializedEarnedEntry, SerializedClaimEvent } from '../interfaces/Breakdown';
+import { getAddress } from 'viem';
+import { Breakdown, BreakdownMeta, EarnedSource, SerializedEarnedEntry, SerializedClaimEvent, VaultTokenBreakdown } from '../interfaces/Breakdown';
+import { UserDistribution } from '../interfaces/Distribution';
 
 const BREAKDOWN_DIR = path.resolve(__dirname, '../../data/breakdown');
 
@@ -15,6 +17,29 @@ const metaPath = () => path.resolve(BREAKDOWN_DIR, 'meta.json');
 const earnedPath = () => path.resolve(BREAKDOWN_DIR, 'earned.json');
 const claimsPath = () => path.resolve(BREAKDOWN_DIR, 'claims.json');
 const breakdownPath = () => path.resolve(BREAKDOWN_DIR, 'breakdown.json');
+
+export function earnedPortions(user: UserDistribution, morphoDepositors: ReadonlySet<string>): { amount: bigint; source: EarnedSource }[] {
+    const amount = BigInt(user.amount);
+    // Old files omit source. Only wrapper-only Morpho positions had zero TWAB.
+    const source = user.source ?? (
+        BigInt(user.balance) === 0n && morphoDepositors.has(getAddress(user.user).toLowerCase()) ? 'morpho' : 'direct'
+    );
+    if (!user.firmEscrows?.length) return [{ amount, source }];
+
+    const firm = user.firmEscrows.reduce((sum, escrow) => sum + BigInt(escrow.amount), 0n);
+    if (firm > amount || (source === 'firm' && amount !== firm)) {
+        throw new Error(`FiRM allocations do not reconcile for ${user.user}`);
+    }
+    if (firm === amount) return [{ amount, source: 'firm' }];
+    if (firm === 0n) return [{ amount, source }];
+    return [{ amount: amount - firm, source }, { amount: firm, source: 'firm' }];
+}
+
+export function describeSources(sources: ReadonlySet<EarnedSource>): Pick<VaultTokenBreakdown, 'type' | 'sources'> {
+    if (sources.size < 2) return { type: sources.values().next().value ?? 'direct' };
+    if (sources.has('firm')) return { type: 'both', sources: [...sources].sort() };
+    return { type: 'both' };
+}
 
 // ── Meta (incremental state) ──
 

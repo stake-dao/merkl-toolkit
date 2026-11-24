@@ -1,10 +1,13 @@
-export type ProductType = "direct" | "morpho" | "both";
+export type EarnedSource = "direct" | "morpho" | "firm";
+export type ProductType = EarnedSource | "both";
 
 export interface VaultTokenBreakdown {
     earned: string;
     claimed: string;
     claimable: string;
     type: ProductType;
+    /** Sources for a mixed position that includes FiRM. */
+    sources?: EarnedSource[];
 }
 
 export interface Breakdown {
@@ -14,8 +17,6 @@ export interface Breakdown {
         };
     };
 }
-
-export type EarnedSource = "direct" | "morpho";
 
 export interface SerializedEarnedEntry {
     timestamp: number;

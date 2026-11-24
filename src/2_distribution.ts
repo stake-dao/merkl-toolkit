@@ -1,5 +1,5 @@
 import { mainnet } from "viem/chains";
-import { Address, formatUnits, isAddress } from "viem";
+import { Address, formatUnits, getAddress, isAddress } from "viem";
 
 import { getIncentives, writeIncentives } from "./utils/incentives";
 import { getClient } from "./utils/rpc";
@@ -8,10 +8,11 @@ import { TokenHolderScanner } from "./utils/tokenHolderScanner";
 import { rmAndCreateDistributionDir, writeDistribution, writeDistributionGaugeData } from "./utils/distribution";
 import { getLastDistributionsData, writeLastDistributionData } from "./utils/distributionData";
 
-import { Distribution, IncentiveDistribution } from "./interfaces/Distribution";
+import { Distribution, IncentiveDistribution, UserDistribution } from "./interfaces/Distribution";
 import { registry } from "./integrations/registry";
 import { MorphoIntegration } from "./integrations/morpho";
 import { expandWrapperAllocations } from "./integrations/expand";
+import { getFirmEscrowOwners } from "./integrations/firm/registry";
 /**
  * Distribution
  *
@@ -232,6 +233,43 @@ const toDistributionForWindow = (
     return { users, holders };
 };
 
+/** FiRM escrows each hold for one borrower. Keep their already-rounded window allocations intact. */
+export function applyFirmEscrowAllocations(
+    users: UserDistribution[],
+    owners: ReadonlyMap<Address, Address>,
+    totalWindowWeight: bigint,
+): UserDistribution[] {
+    // A window with no holders pays the incentive manager.
+    if (totalWindowWeight === 0n || owners.size === 0) return users;
+
+    const payouts = new Map<Address, UserDistribution>();
+    for (const user of users) {
+        const account = getAddress(user.user);
+        const owner = owners.get(account);
+        const beneficiary = owner ?? account;
+        let payout = payouts.get(beneficiary);
+        if (!payout) {
+            payout = { ...user, user: beneficiary };
+            if (owner) payout.source = "firm";
+            if (user.firmEscrows) payout.firmEscrows = [...user.firmEscrows];
+            payouts.set(beneficiary, payout);
+        } else {
+            payout.amount = (BigInt(payout.amount) + BigInt(user.amount)).toString();
+            const weight = BigInt(payout.balance) + BigInt(user.balance);
+            payout.balance = weight.toString();
+            payout.share = formatSharePercent(weight, totalWindowWeight);
+            // On a mixed row, source describes the borrower's own portion.
+            if (!owner) payout.source = user.source ?? "direct";
+            else payout.source ??= "direct";
+        }
+
+        if (owner) {
+            (payout.firmEscrows ??= []).push({ escrow: account, amount: user.amount.toString() });
+        }
+    }
+    return [...payouts.values()];
+}
+
 export const distribute = async () => {
     const mainnetRpcUrl = process.env.MAINNET_RPC_URL;
     if (!mainnetRpcUrl) {
@@ -340,12 +378,14 @@ export const distribute = async () => {
     }
 
     // 3. Expand wrapper allocations — drill into depositors via sub-TWAB
-    if (wrapperMap.size > 0) {
-        for (const dist of allIncentiveDistributions) {
+    const firmOwners = await getFirmEscrowOwners(client, currentBlockNumber);
+    for (const dist of allIncentiveDistributions) {
+        const totalWindowWeight = dist.users.reduce((total, user) => total + BigInt(user.balance), 0n);
+        if (wrapperMap.size > 0) {
             const window = windowsByVault.get(dist.vault)?.find(
                 (w) => w.incentive.id === dist.distribution.incentiveId,
             );
-            if (!window) continue;
+            if (!window) throw new Error(`Missing distribution window for incentive ${dist.distribution.incentiveId}`);
 
             try {
                 dist.users = await expandWrapperAllocations(
@@ -362,6 +402,7 @@ export const distribute = async () => {
                 process.exit(1);
             }
         }
+        dist.users = applyFirmEscrowAllocations(dist.users, firmOwners, totalWindowWeight);
     }
 
     // 4. Persist the distribution artifact for the Merkle step.
@@ -380,10 +421,10 @@ export const distribute = async () => {
 
     // Check ended flag
     for (const incentive of incentives) {
-        let latest = processedUntil.get(incentive.id);
-        latest = latest > incentive.end ? incentive.end : latest;
-
-        incentive.distributedUntil = latest;
+        const latest = processedUntil.get(incentive.id);
+        if (latest !== undefined) {
+            incentive.distributedUntil = latest > incentive.end ? incentive.end : latest;
+        }
 
         if (BigInt(currentTimestamp) >= incentive.end ) {
             incentive.ended = true;
