@@ -30,5 +30,7 @@ export interface UserDistribution {
     balance: string;
     share: string;
     amount: string;
-    source?: "direct" | "morpho";
+    source?: "direct" | "morpho" | "firm";
+    /** Portions of amount credited through each of this borrower's FiRM escrows. */
+    firmEscrows?: { escrow: Address; amount: string }[];
 }

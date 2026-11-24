@@ -1,5 +1,10 @@
 export interface DistributionData {
     timestamp: number;
     blockNumber: number;
-    sentOnchain: boolean; // true if this distribution has been sent onchain
+    sentOnchain: boolean; // The toolkit finished writing the Merkle for this round.
+    firmRecovery?: {
+        stage: "withdraw" | "credit" | "restore";
+        sourceTimestamp: number;
+        sourceRoot: string;
+    };
 }

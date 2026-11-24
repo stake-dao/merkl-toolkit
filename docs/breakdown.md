@@ -6,7 +6,7 @@ Le breakdown genere un fichier `data/breakdown/breakdown.json` qui detaille, pou
 - **earned** : montant total gagne via ce vault
 - **claimed** : montant deja reclame, attribue a ce vault
 - **claimable** : montant restant a reclamer, attribue a ce vault
-- **type** : `"direct"` (holder du vault), `"morpho"` (deposant via Morpho lending), ou `"both"`
+- **type** indique une détention directe (`"direct"`), un dépôt Morpho (`"morpho"`), un escrow FiRM (`"firm"`) ou plusieurs sources (`"both"`).
 
 Ce fichier est le complement du merkle (`last_merkle.json`) qui lui n'a que la vue `user -> token -> totalAmount` sans la dimension vault.
 
@@ -62,7 +62,7 @@ Invariants :
 
 **Source** : fichiers `data/distributions/{timestamp}/distribution.json`
 
-Pour chaque distribution envoyee on-chain (`sentOnchain: true`), lit les incentives et extrait les montants par `(user, vault, token)`. Chaque earned entry a un timestamp (celui de la distribution) et une source (`"direct"` ou `"morpho"`).
+Pour chaque distribution dont le Merkle est généré (`sentOnchain: true`), le breakdown lit les incentives et extrait les montants par `(user, vault, token)`. Chaque entrée conserve le timestamp de la distribution et sa source (`"direct"`, `"morpho"` ou `"firm"`).
 
 **Incrementalite** : `meta.lastProcessedTimestamp` indique la derniere distribution traitee. Seules les nouvelles sont lues. Le resultat est persiste dans `earned.json`.
 
@@ -71,6 +71,8 @@ Pour chaque distribution envoyee on-chain (`sentOnchain: true`), lit les incenti
 - Sinon (anciennes distributions) : heuristique `balance == 0` + presence dans les caches Morpho (`data/holders/morpho/*/index.json`) → `"morpho"`, sinon `"direct"`
 
 Le champ `source: "morpho"` est ecrit par `integrations/expand.ts` lors du wrapper expansion : seuls les deposants qui n'ont PAS de position directe dans le vault sont tagges morpho.
+
+Pour FiRM, chaque ligne de distribution est au nom du borrower. Sa liste optionnelle `firmEscrows` détaille le montant déjà inclus dans `amount` pour chaque `escrow`. Si le borrower reçoit aussi une allocation personnelle, `source` décrit cette allocation et le lecteur `src/6_breakdown.ts` la sépare des montants FiRM dans `earned.json`. Les snapshots de holders par gauge conservent les poids des adresses qui détenaient les parts.
 
 ### Phase 2 : Scan des claim events via Etherscan
 
@@ -191,10 +193,13 @@ Le `--rebuild` est necessaire apres un `git pull` qui modifie les fichiers de da
 Chaque entree du breakdown a un champ `type` :
 - `"direct"` : l'user detient des tokens du vault directement
 - `"morpho"` : l'user a depose dans un marche Morpho qui utilise le vault comme collateral
-- `"both"` : l'user a des positions des deux types sur le meme vault/token
+- `"firm"` indique que la récompense du borrower provient de son escrow FiRM.
+- `"both"` indique plusieurs sources sur le même vault/token. Pour les positions mixtes incluant FiRM, le champ optionnel `sources` énumère les sources. Les consommateurs qui affichent le type doivent prendre en charge `"firm"` et utiliser `sources` lorsqu'il est présent.
+
+L'API Hono de Stake DAO transmet l'entrée du borrower telle quelle sur `/v1/merkles/breakdown`. Le portefeuille Lockers lit `claimable` pour afficher les montants par vault. L'ajout de `"firm"` est compatible avec ces deux lecteurs.
 
 La source est determinee :
-1. **Nouvelles distributions** : le champ `source` est ecrit par `integrations/expand.ts` lors du wrapper expansion
+1. **Nouvelles distributions** : `source` identifie la position directe, Morpho ou FiRM. Le lecteur sépare la part des escrows indiquée par `firmEscrows` pour les positions mixtes.
 2. **Anciennes distributions** (sans champ `source`) : heuristique basee sur `balance == 0` + presence dans les caches `data/holders/morpho/*/index.json`
 
 ## Validation

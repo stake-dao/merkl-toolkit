@@ -131,6 +131,21 @@ Fonction `getIncentiveSource(sender)` dans `utils/merkl.ts` :
 
 ---
 
+## Escrows FiRM sur Ethereum
+
+Le contrat DBR d’Inverse (`0xAD038Eb671c44b853887A7E32528FaB35dC5D710`) annonce les marchés via `AddMarket`. Le toolkit indexe leurs événements `CreateEscrow`, y compris les escrows créés avant l’inscription du marché, et vérifie chaque relation avec `market.escrows(borrower)`. Le cache `data/holders/firm/index.json` conserve le bloc et son hash pour permettre les mises à jour incrémentales. Les nouveaux marchés Ethereum qui utilisent cette interface sont pris en compte dès leur inscription.
+
+Après la répartition Morpho, le toolkit attribue l’intégralité de la part pondérée de chaque escrow à son emprunteur. Une seule adresse peut ainsi cumuler une détention directe et plusieurs escrows. Le snapshot du gauge conserve les détenteurs physiques. La distribution et le breakdown indiquent les bénéficiaires.
+
+### Correction historique DOLA/swanUSD (ENG-2308)
+
+L’incentive 2601 avait attribué 36,666666666666441888 DOLA à l’escrow. Le distributeur autorise quiconque à présenter son ancienne preuve tant que la racine correspondante est active. Le workflow génère deux distributions de correction consécutives avec la liste d’incentives vide. L’index identifie leur étape dans le champ optionnel `firmRecovery`. Les curseurs de distribution restent à leur valeur précédente pendant ces deux étapes.
+
+1. Le premier passage retire uniquement le droit de l’escrow. Le mécanisme de publication habituel active cette racine.
+2. Le passage suivant vérifie la racine de retrait et le montant déjà payé au même bloc Ethereum finalisé. Si le montant est nul, il réattribue la somme exacte à l’emprunteur, corrige la ligne historique et son cache de breakdown. Le total par token de la racine finale est identique à celui de la racine d’origine. Si l’ancien droit a déjà été payé en totalité, le pipeline conserve ou rétablit son cumul sous l’escrow et reprend les distributions courantes.
+
+Les Merkle publiés avant la correction restent disponibles dans leurs répertoires horodatés. Les distributions ordinaires reprennent à partir de la racine confirmée. `pnpm test:firm` exerce la découverte des marchés, la réattribution et les étapes de publication.
+
 ## Etape 2 - Distribution (calcul TWAB)
 
 **Fichiers** : `2_distribution.ts`, `utils/twab.ts`, `utils/chain.ts`, `utils/token.ts`, `utils/tokenHolderScanner.ts`, `integrations/expand.ts`
