@@ -111,11 +111,12 @@ const buildSnapshots = async (
 ) => {
     const sorted = [...windows].sort((a, b) => a.startTimestamp - b.startTimestamp);
     const globalStart = BigInt(sorted[0].startTimestamp);
-    const globalEnd = BigInt(sorted[sorted.length - 1].endTimestamp);
+    const latestEnd = windows.reduce((latest, window) => Math.max(latest, window.endTimestamp), sorted[0].endTimestamp);
+    const globalEnd = BigInt(latestEnd);
 
     // 1. Find the block span that straddles the whole window.
     const startBlock = await blockAtOrAfter(client, sorted[0].startTimestamp, 0n, currentBlockNumber, cache);
-    const endBlock = await blockAtOrBefore(client, sorted[sorted.length - 1].endTimestamp, startBlock, currentBlockNumber, cache);
+    const endBlock = await blockAtOrBefore(client, latestEnd, startBlock, currentBlockNumber, cache);
 
     if (endBlock < startBlock) {
         console.warn(`⚠️ Invalid block range for vault ${vault}. Skipping.`);
@@ -173,8 +174,11 @@ const toDistributionForWindow = (
     snapshots: Map<bigint, Map<Address, bigint>>,
 ) => {
     // Subtract snapshots to obtain raw TWAB weight earned inside this window.
-    const startWeights = snapshots.get(BigInt(window.startTimestamp)) ?? new Map<Address, bigint>();
-    const endWeights = snapshots.get(BigInt(window.endTimestamp)) ?? new Map<Address, bigint>();
+    const startWeights = snapshots.get(BigInt(window.startTimestamp));
+    const endWeights = snapshots.get(BigInt(window.endTimestamp));
+    if (!startWeights || !endWeights) {
+        throw new Error(`Missing TWAB snapshot for incentive ${window.incentive.id} (${window.startTimestamp}–${window.endTimestamp})`);
+    }
 
     const weights = new Map<Address, bigint>();
     for (const address of new Set([...startWeights.keys(), ...endWeights.keys()])) {
