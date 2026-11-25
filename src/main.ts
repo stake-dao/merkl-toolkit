@@ -11,6 +11,7 @@ import { prepareFirmRecovery } from "./recovery/firm_round";
 import { readActiveBaseline } from "./utils/merkle";
 import { getLastDistributionsData } from "./utils/distributionData";
 import { getClient } from "./utils/rpc";
+import { writeIncentives } from "./utils/incentives";
 
 dotenv.config();
 
@@ -20,10 +21,11 @@ const main = async () => {
     const dataDir = path.resolve(__dirname, "../data");
     const active = await readActiveBaseline(JSON.parse(fs.readFileSync(path.join(dataDir, "last_merkle.json"), "utf8")));
     const recovery = await prepareFirmRecovery(dataDir, active, await getClient(1));
-    await fetchIncentives();
-    if (!getLastDistributionsData().some(round => !round.sentOnchain)) {
-        await distribute();
-    }
+    const updatedIncentives = await fetchIncentives();
+    const pending = getLastDistributionsData().some(round => !round.sentOnchain);
+    const distributed = !pending && await distribute(updatedIncentives);
+    // A completed distribution saves its own incentive cursors.
+    if (updatedIncentives && !distributed) writeIncentives(updatedIncentives);
     await generateMerkle(active.merkleRoot, recovery);
 
     // Check claims

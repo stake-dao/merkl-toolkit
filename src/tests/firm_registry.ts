@@ -25,6 +25,7 @@ async function testRegistry(cachePath: string) {
         { address: unrelated, args: { user, escrow: unrelated }, blockNumber: first + 1n },
     ];
     let getLogsCount = 0;
+    let failingPage: bigint | undefined;
     const calls: { fromBlock: bigint; toBlock: bigint }[] = [];
     let invalidResult = false;
     const blockHashes = new Map<bigint, string>();
@@ -36,6 +37,7 @@ async function testRegistry(cachePath: string) {
             getLogsCount++;
             calls.push({ fromBlock, toBlock });
             assert(toBlock - fromBlock < 10_000n);
+            if (fromBlock === failingPage) throw new Error("RPC page unavailable");
             const addresses = Array.isArray(address) ? address : [address];
             const events = event.name === "AddMarket" ? registrations : creations;
             return events.filter(e => addresses.includes(e.address) && e.blockNumber >= fromBlock && e.blockNumber <= toBlock);
@@ -52,6 +54,10 @@ async function testRegistry(cachePath: string) {
         getFirmEscrowOwners(mock as unknown as Parameters<typeof getFirmEscrowOwners>[0], blockNumber, cachePath);
 
     assert.equal((await ownersAt(first - 1n)).size, 0);
+    failingPage = first + 40_000n;
+    await assert.rejects(ownersAt(failingPage), /RPC page unavailable/);
+    assert(!fs.existsSync(cachePath), "A failed backfill must not leave a partial checkpoint");
+    failingPage = undefined;
     const original = await ownersAt(first + 10n);
     assert.deepEqual(original, new Map([[escrow, user]]));
     assert(!original.has(nextEscrow), "An unregistered market must not redirect rewards");

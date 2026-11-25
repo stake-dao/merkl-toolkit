@@ -270,7 +270,7 @@ export function applyFirmEscrowAllocations(
     return [...payouts.values()];
 }
 
-export const distribute = async () => {
+export const distribute = async (updatedIncentives?: IncentiveExtended[]) => {
     const mainnetRpcUrl = process.env.MAINNET_RPC_URL;
     if (!mainnetRpcUrl) {
         throw new Error("MAINNET_RPC_URL is not set in environment");
@@ -283,7 +283,7 @@ export const distribute = async () => {
     // Register wrapper integrations — add new ones here
     registry.register(new MorphoIntegration(client));
 
-    const incentives = await getIncentives();
+    const incentives = updatedIncentives ?? await getIncentives();
     const lastDistributions = getLastDistributionsData();
     const lastDistributionTimestamp =
         lastDistributions.length === 0 ? 0 : lastDistributions[lastDistributions.length - 1].timestamp;
@@ -291,7 +291,7 @@ export const distribute = async () => {
     const activeIncentives = incentives.filter((incentive) => !incentive.ended);
     if (activeIncentives.length === 0) {
         console.log("⚠️ No active incentives after last distribution timestamp:", lastDistributionTimestamp);
-        return;
+        return false;
     }
 
     console.log(`✅ Found ${activeIncentives.length} active incentives at timestamp ${currentTimestamp}`);
@@ -306,9 +306,12 @@ export const distribute = async () => {
     const windowsByVault = toWindowsByVault(activeIncentives, currentTimestamp);
     if (windowsByVault.size === 0) {
         console.log("⚠️ No windows to distribute in this run.");
-        return;
+        return false;
     }
 
+    // Verify FiRM before writing any round files or holder checkpoints.
+    const currentBlockNumber = currentBlock.number as bigint;
+    const firmOwners = await getFirmEscrowOwners(client, currentBlockNumber);
     rmAndCreateDistributionDir(currentTimestamp);
 
     // 1b. Build wrapper map from all registered integrations
@@ -319,7 +322,6 @@ export const distribute = async () => {
 
     // 2. For each vault replay historical transfers and collect TWAB weights.
     const blockTimestampCache = new Map<string, number>();
-    const currentBlockNumber = currentBlock.number as bigint;
     const allIncentiveDistributions: IncentiveDistribution[] = [];
     const processedUntil = new Map<number, bigint>();
 
@@ -378,7 +380,6 @@ export const distribute = async () => {
     }
 
     // 3. Expand wrapper allocations — drill into depositors via sub-TWAB
-    const firmOwners = await getFirmEscrowOwners(client, currentBlockNumber);
     for (const dist of allIncentiveDistributions) {
         const totalWindowWeight = dist.users.reduce((total, user) => total + BigInt(user.balance), 0n);
         if (wrapperMap.size > 0) {
@@ -432,4 +433,5 @@ export const distribute = async () => {
     }
 
     writeIncentives(incentives);
+    return true;
 };

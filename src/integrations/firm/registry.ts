@@ -25,24 +25,41 @@ interface Checkpoint {
 // Bound both the block range accepted by the RPC and the number of concurrent calls
 // during the one-time backfill. A failed page aborts the scan before the cursor moves.
 async function scanLogs<T>(
-    from: bigint, to: bigint, query: (from: bigint, to: bigint) => Promise<T[]>,
+    event: string, from: bigint, to: bigint, query: (from: bigint, to: bigint) => Promise<T[]>,
 ): Promise<T[]> {
     const result: T[] = [];
-    while (from <= to) {
-        const pages: Promise<T[]>[] = [];
-        for (let i = 0; i < 4 && from <= to; i++) {
-            const end = from + DEFAULT_LOG_CHUNK_SIZE - 1n;
-            pages.push(query(from, end < to ? end : to));
-            from = end + 1n;
+    const totalPages = (to - from) / DEFAULT_LOG_CHUNK_SIZE + 1n;
+    let completed = 0;
+    const reportProgress = () => console.log(`[FiRM] ${event}: ${completed}/${totalPages} pages, ${result.length} events`);
+    console.log(`[FiRM] Scanning ${event} from block ${from} to ${to} (${totalPages} pages)`);
+    const progressTimer = setInterval(reportProgress, 30_000);
+    try {
+        while (from <= to) {
+            const pages: Promise<T[]>[] = [];
+            for (let i = 0; i < 4 && from <= to; i++) {
+                const fromBlock = from;
+                const end = fromBlock + DEFAULT_LOG_CHUNK_SIZE - 1n;
+                const toBlock = end < to ? end : to;
+                pages.push(query(fromBlock, toBlock).catch(error => {
+                    console.error(`[FiRM] ${event} failed on blocks ${fromBlock}–${toBlock}`);
+                    throw error;
+                }));
+                from = toBlock + 1n;
+            }
+            for (const page of await Promise.all(pages)) result.push(...page);
+            completed += pages.length;
         }
-        for (const page of await Promise.all(pages)) result.push(...page);
+        reportProgress();
+    } finally {
+        clearInterval(progressTimer);
     }
     return result;
 }
 
 async function readEscrows(client: Client, markets: Address[], from: bigint, to: bigint) {
     if (!markets.length) return [];
-    return scanLogs(from, to, (fromBlock, toBlock) =>
+    const scope = markets.length === 1 ? markets[0] : `${markets.length} markets`;
+    return scanLogs(`CreateEscrow (${scope})`, from, to, (fromBlock, toBlock) =>
         client.getLogs({ address: markets, event: createEscrow, fromBlock, toBlock }),
     );
 }
@@ -73,6 +90,7 @@ export async function getFirmEscrowOwners(
     if (client.chain?.id !== 1) throw new Error("FiRM registry requires an Ethereum mainnet client");
     if (blockNumber < DBR_DEPLOYMENT) return new Map();
 
+    console.log(`[FiRM] Indexing markets and escrows at block ${blockNumber}`);
     const snapshot = await client.getBlock({ blockNumber });
     if (!snapshot.hash) throw new Error(`Missing hash for FiRM snapshot block ${blockNumber}`);
     const stored: Checkpoint | undefined = fs.existsSync(cachePath)
@@ -91,11 +109,14 @@ export async function getFirmEscrowOwners(
         if (anchor.hash === stored.blockHash) checkpoint = stored;
     }
     const owners = new Map(checkpoint?.owners);
-    if (checkpoint?.blockNumber === blockNumber) return owners;
+    if (checkpoint?.blockNumber === blockNumber) {
+        console.log(`[FiRM] Reusing checkpoint at block ${blockNumber} (${owners.size} escrows)`);
+        return owners;
+    }
 
     const from = checkpoint ? checkpoint.blockNumber + 1n : DBR_DEPLOYMENT;
     const markets = new Set(checkpoint?.markets);
-    const registrations = await scanLogs(from, blockNumber, (fromBlock, toBlock) =>
+    const registrations = await scanLogs("AddMarket", from, blockNumber, (fromBlock, toBlock) =>
         client.getLogs({ address: DBR, event: addMarket, fromBlock, toBlock }),
     );
     const added = new Set<Address>();
@@ -108,6 +129,7 @@ export async function getFirmEscrowOwners(
 
     const logs = await readEscrows(client, [...markets], from, blockNumber);
     for (const market of added) {
+        console.log(`[FiRM] Checking deployment history for market ${market}`);
         const deployment = await deploymentAtOrBefore(client, market, from - 1n);
         if (deployment !== undefined) {
             for (const log of await readEscrows(client, [market], deployment, from - 1n)) logs.push(log);
@@ -117,6 +139,7 @@ export async function getFirmEscrowOwners(
     // Cross-check the emitted pair against the market itself, independent of the escrow
     // implementation. This works for escrows without a beneficiary() getter.
     for (let i = 0; i < logs.length; i += 100) {
+        console.log(`[FiRM] Verifying escrow events ${i + 1}–${Math.min(i + 100, logs.length)}/${logs.length} at block ${blockNumber}`);
         const batch = logs.slice(i, i + 100).map(log => {
             const market = getAddress(log.address);
             if (!markets.has(market)) throw new Error(`Unregistered FiRM market ${market}`);
@@ -157,5 +180,6 @@ export async function getFirmEscrowOwners(
             fs.rmSync(temporary, { force: true });
         }
     }
+    console.log(`[FiRM] Verified ${markets.size} markets and ${owners.size} escrows at block ${blockNumber}`);
     return owners;
 }
