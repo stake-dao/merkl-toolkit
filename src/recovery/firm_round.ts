@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 import type { PublicClient } from "viem";
 import { merklAbi } from "../abis/Merkl";
 import { MERKL_CONTRACT } from "../constants";
@@ -8,20 +7,8 @@ import type { SerializedEarnedEntry } from "../interfaces/Breakdown";
 import type { Distribution } from "../interfaces/Distribution";
 import type { DistributionData } from "../interfaces/DistributionData";
 import type { MerkleData } from "../interfaces/MerkleData";
-import { safeStringify } from "../utils/parse";
 import { FIRM_RECOVERY, reassignFirmBalance, repairFirmDistribution, repairFirmEarned } from "./firm";
-
-const read = <T>(file: string): T => JSON.parse(fs.readFileSync(file, "utf8"));
-
-function write(file: string, value: unknown) {
-    const temporary = file + "." + randomUUID() + ".tmp";
-    try {
-        fs.writeFileSync(temporary, safeStringify(value));
-        fs.renameSync(temporary, file);
-    } finally {
-        fs.rmSync(temporary, { force: true });
-    }
-}
+import { openEmptyRound, read, write } from "./round";
 
 export interface PreparedFirmRecovery {
     sourceRoot: string;
@@ -77,27 +64,7 @@ export async function prepareFirmRecovery(
             }
             const last = index[index.length - 1];
             if (!last.sentOnchain) return;
-            const timestamp = Number(block.timestamp);
-            const blockNumber = Number(block.number);
-            if (!Number.isSafeInteger(timestamp) || !Number.isSafeInteger(blockNumber) ||
-                timestamp <= last.timestamp || blockNumber <= last.blockNumber) {
-                throw new Error("FiRM recovery requires a newer block for its empty distribution");
-            }
-
-            // Only needed if distribute() produced no window. Reuse an interrupted
-            // empty round and never overwrite a real distribution at that timestamp.
-            const folder = roundDir(timestamp);
-            const distributionFile = path.join(folder, "distribution.json");
-            if (fs.existsSync(distributionFile)) {
-                const existing = read<Distribution>(distributionFile);
-                if (existing.timestamp !== timestamp || existing.blockNumber !== blockNumber || existing.incentives.length !== 0) {
-                    throw new Error("Conflicting distribution at the FiRM recovery timestamp");
-                }
-            } else {
-                fs.mkdirSync(folder, { recursive: true });
-                write(distributionFile, { blockNumber, timestamp, incentives: [] });
-            }
-            write(indexFile, [...index, { timestamp, blockNumber, sentOnchain: false }]);
+            openEmptyRound(dir, index, block);
         },
         async confirmUnclaimed() {
             if ((await readClaim()).claimed !== 0n) throw new Error("FiRM escrow DOLA claimed before Merkle export");
