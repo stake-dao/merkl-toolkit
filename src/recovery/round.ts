@@ -39,7 +39,6 @@ export function openEmptyRound(dir: string, index: DistributionData[], block: { 
         write(file, { blockNumber, timestamp, incentives: [] });
     }
     const round = { timestamp, blockNumber, sentOnchain: false };
-    index.push(round);
-    write(path.join(dir, "distribution.json"), index);
+    write(path.join(dir, "distribution.json"), [...index, round]);
     return round;
 }

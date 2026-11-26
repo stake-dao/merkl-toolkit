@@ -8,7 +8,7 @@ import { refreshCache } from "./7_refresh_cache";
 import path from "path";
 import fs from "fs";
 import { prepareFirmRecovery } from "./recovery/firm_round";
-import { applyPmusdRecovery } from "./recovery/pmusd";
+import { applyPmusdRecovery, readPmusdSurplus } from "./recovery/pmusd";
 import { readActiveBaseline } from "./utils/merkle";
 import { getLastDistributionsData } from "./utils/distributionData";
 import { getClient } from "./utils/rpc";
@@ -28,7 +28,8 @@ const main = async () => {
     const distributed = !pending && await distribute(updatedIncentives);
     // A completed distribution saves its own incentive cursors.
     if (updatedIncentives && !distributed) writeIncentives(updatedIncentives);
-    await applyPmusdRecovery(dataDir, () => client.getBlock({ blockTag: "latest" }));
+    await applyPmusdRecovery(dataDir, () => client.getBlock({ blockTag: "latest" }),
+        block => readPmusdSurplus(active, client, block));
     await generateMerkle(active.merkleRoot, recovery);
 
     // Check claims
