@@ -17,6 +17,7 @@ export interface IncentiveDistributionDetails {
     amountToDistribute: bigint;
     incentivePerSecond: bigint;
     incentiveId: number;
+    recovery?: "pmusd-twab";
 }
 
 export interface IntentiveToken {

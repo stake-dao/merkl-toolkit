@@ -145,6 +145,14 @@ La nouvelle distribution référence la racine d’origine dans `firmRecovery.so
 
 Tant que l’ancienne racine est active, un tiers peut présenter la preuve de l’escrow. Les lectures de `claimed(escrow, DOLA)` du toolkit ne couvrent que la période de génération. La publication on-chain est exécutée par un job distinct.
 
+## Remboursement pmUSD des fenêtres TWAB de mars 2026 (ENG-2316)
+
+Le manager a réclamé 353,239532329539949908 pmUSD qui revenaient aux détenteurs de deux vaults. Stake DAO doit restituer ce montant au distributeur. Le rejeu des incentives 341 et 342 du round `1774566095`, puis de la 342 du round `1774639343`, donne les droits de 190 adresses. Les montants de `config/pmusd-twab-recovery.json` sont regroupés par vault après l’arrondi de chaque fenêtre. [Transaction du claim](https://etherscan.io/tx/0x9a0e4d7d0e9ec19602c26eac48092dff9771ca63fe864f9d579bd4c78b6d56ec)
+
+Le remboursement s’applique aux historiques contenant le Merkle de production du round `1795672871` (bloc Ethereum `26497442`). À ce bloc, les 19 campagnes pmUSD totalisaient 71 679,499055389355574629 pmUSD, poussières comprises, et le prochain identifiant de campagne était 2610. Pour déterminer le montant disponible, le toolkit lit au même bloc le solde du distributeur, les montants déjà réclamés et les nouvelles campagnes. Il réserve le montant intégral des campagnes pmUSD de confiance, diminué des claims payés. Une campagne reste ainsi couverte même si ses fenêtres sont futures ou si son vault est encore inconnu du toolkit.
+
+Tant que le surplus est insuffisant, les distributions ordinaires continuent. Le premier run suffisamment financé ajoute deux lignes `distribution.recovery = "pmusd-twab"` au round, même en l’absence de fenêtre ordinaire. Ces lignes alimentent le Merkle cumulatif et le breakdown et identifient le remboursement lors des runs suivants. Une reprise revérifie le financement d’un round en attente qui contient déjà ces lignes avant de l’exporter. Les lecteurs qui comptent les fenêtres d’émission peuvent exclure les lignes de remboursement.
+
 ## Etape 2 - Distribution (calcul TWAB)
 
 **Fichiers** : `2_distribution.ts`, `utils/twab.ts`, `utils/chain.ts`, `utils/token.ts`, `utils/tokenHolderScanner.ts`, `integrations/expand.ts`

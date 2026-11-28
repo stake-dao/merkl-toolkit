@@ -8,6 +8,7 @@ import { refreshCache } from "./7_refresh_cache";
 import path from "path";
 import fs from "fs";
 import { prepareFirmRecovery } from "./recovery/firm_round";
+import { applyPmusdRecovery, readPmusdSurplus } from "./recovery/pmusd";
 import { readActiveBaseline } from "./utils/merkle";
 import { getLastDistributionsData } from "./utils/distributionData";
 import { getClient } from "./utils/rpc";
@@ -20,12 +21,15 @@ const main = async () => {
     // been adopted locally. No old root may restore expired entitlements.
     const dataDir = path.resolve(__dirname, "../data");
     const active = await readActiveBaseline(JSON.parse(fs.readFileSync(path.join(dataDir, "last_merkle.json"), "utf8")));
-    const recovery = await prepareFirmRecovery(dataDir, active, await getClient(1));
+    const client = await getClient(1);
+    const recovery = await prepareFirmRecovery(dataDir, active, client);
     const updatedIncentives = await fetchIncentives();
     const pending = getLastDistributionsData().some(round => !round.sentOnchain);
     const distributed = !pending && await distribute(updatedIncentives);
     // A completed distribution saves its own incentive cursors.
     if (updatedIncentives && !distributed) writeIncentives(updatedIncentives);
+    await applyPmusdRecovery(dataDir, () => client.getBlock({ blockTag: "latest" }),
+        block => readPmusdSurplus(active, client, block));
     await generateMerkle(active.merkleRoot, recovery);
 
     // Check claims
